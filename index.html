@@ -1285,6 +1285,14 @@ function persistMonth(mk, opt) {
 /* Years of data mean dozens of documents. Writing them all at once trips the
    store's concurrency budget, so go through them a handful at a time. */
 async function persistAll(opt) {
+  // เดือนต้องขยับเลขรุ่นในดัชนีเสมอ เพราะเครื่องอื่นใช้เลขนี้ตัดสินว่าจะดึงเดือนนั้นใหม่ไหม
+  // เขียนทับไปเฉยๆ โดยไม่ขยับ เครื่องอื่นจะเห็นเลขเท่าเดิมแล้วข้ามการดึง
+  // ของที่ถูกลบจึงค้างอยู่บนเครื่องนั้นตลอดไป (เจอตอนกด "ลบข้อมูลตัวอย่าง" บนเครื่องหนึ่ง
+  // แล้วอีกเครื่องยังแสดงข้อมูลตัวอย่างครบ ทั้งที่ในไฟล์ลบไปหมดแล้ว)
+  Object.keys(S.tx).forEach(mk => {
+    S.index.months[mk] = (Number(S.index.months[mk]) || 0) + 1;
+    Sync.revs[mk] = S.index.months[mk];
+  });
   const keys = CORE_KEYS.concat(Object.keys(S.tx).map(mk => "m_" + mk));
   for (let i = 0; i < keys.length; i += 6) {
     await Promise.all(keys.slice(i, i + 6).map(k => persist(k, opt)));
