@@ -1184,19 +1184,22 @@ function mergeBudgetsInto(body, preferLocal) {
   };
   return JSON.stringify(S.budgets) !== before;
 }
+/* gen คือรุ่นของข้อมูลทั้งชุด ขยับขึ้นเมื่อมีการกู้คืนข้อมูลสำรองทับทั้งหมด
+   เครื่องที่เห็น gen ใหม่กว่าของตัวเองจะทิ้งของเก่าแล้วรับของใหม่ทั้งชุด
+   ไม่งั้นเครื่องที่ยังไม่ได้ซิงก์จะเอารายการเก่ากลับขึ้นไปรวมใหม่เงียบๆ */
 function mergeIndexInto(body) {
-  const before = JSON.stringify(S.index.months || {});
+  const before = JSON.stringify(S.index);
   const months = Object.assign({}, S.index.months || {});
   const incoming = (body && body.months) || {};
   Object.keys(incoming).forEach(k => { months[k] = Math.max(Number(months[k]) || 0, Number(incoming[k]) || 0); });
-  S.index = { months: months };
-  return JSON.stringify(months) !== before;
+  S.index = { months: months, gen: Math.max(Number(S.index.gen) || 0, Number(body && body.gen) || 0) };
+  return JSON.stringify(S.index) !== before;
 }
 
 function docBody(key) {
   if (key === "settings") return { v: S.settings };
   if (key === "budgets") return { tpl: S.budgets.tpl, m: S.budgets.m, roll: S.budgets.roll };
-  if (key === "index") return { months: S.index.months };
+  if (key === "index") return { months: S.index.months, gen: Number(S.index.gen) || 0 };
   if (key.slice(0, 2) === "m_") return { items: S.tx[key.slice(2)] || [], del: delMap(key), rev: S.index.months[key.slice(2)] || 1 };
   if (LIST_KEYS[key]) return { items: listOf(key), del: delMap(key) };
   return {};
@@ -1472,6 +1475,17 @@ async function boot() {
     CORE_KEYS.forEach((k, i) => { if (bodies[i]) remote[k] = bodies[i]; });
   } catch (e) { setStatus("err"); }
 
+  // อีกเครื่องกู้คืนข้อมูลสำรองทับไปแล้ว ของที่ค้างอยู่ในเครื่องนี้เป็นรุ่นก่อนหน้า
+  // ต้องทิ้งทั้งชุดก่อนรับของใหม่ ไม่งั้นรายการเก่าจะถูกรวมกลับขึ้นไปอีก
+  if ((Number(remote.index && remote.index.gen) || 0) > (Number(S.index.gen) || 0)) {
+    Object.keys(S.tx).forEach(mk => lsDel("m_" + mk));
+    S.accounts = []; S.categories = []; S.payees = []; S.recurring = [];
+    S.tx = {}; S.budgets = { tpl: {}, m: {}, roll: {} }; S.del = {};
+    S.index = { months: {}, gen: 0 };
+    Sync.revs = {}; Sync.dirty = {}; lsSet("_dirty", {});
+    invalidate();
+  }
+
   if (remote.accounts && (remote.accounts.items || []).length) {
     CORE_KEYS.forEach(k => { if (remote[k]) { applyBody(k, remote[k]); lsSet(k, remote[k]); } });
     await fetchMonths(Object.keys(S.index.months));
@@ -1523,6 +1537,9 @@ function watchRemote() {
   Backend.watchAll((k, body) => {
     if (!body) return;
     if (JSON.stringify(body) === JSON.stringify(docBody(k))) return;
+    // อีกเครื่องเพิ่งกู้คืนข้อมูลสำรองทับทั้งชุด โหลดหน้าใหม่เพื่อรับของใหม่ทั้งหมด
+    // แทนที่จะรวมของเก่าในเครื่องนี้เข้าไปปน
+    if (k === "index" && (Number(body.gen) || 0) > (Number(S.index.gen) || 0)) { location.reload(); return; }
     applyBody(k, body); lsSet(k, body);
     if (k === "settings") { LANG = S.settings.lang || LANG; applyTheme(); }
     if (k === "index") fetchMonths(Object.keys(S.index.months)).then(render);
@@ -1531,7 +1548,7 @@ function watchRemote() {
 }
 
 /* ปุ่มเข้าสู่ระบบเรียกตัวนี้ พอได้สิทธิ์แล้วโหลดหน้าใหม่ เพราะโทเคนถูกเก็บไว้
-   ใน sessionStorage อยู่แล้ว การ boot รอบถัดไปจึงต่อ Drive ได้เองตั้งแต่ต้น */
+   ใน localStorage อยู่แล้ว การ boot รอบถัดไปจึงต่อ Drive ได้เองตั้งแต่ต้น */
 async function signInWithGoogle() {
   const r = await driveBackend.signIn();
   if (!r) { toast(LANG === "th" ? "เข้าสู่ระบบไม่สำเร็จ" : "Sign-in did not complete"); return false; }
@@ -2850,14 +2867,20 @@ function csvCell(v) {
   return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 function buildCSV() {
-  const head = ["date", "type", "account", "to_account", "amount", "currency", "category", "payee", "note", "tags", "cleared", "splits"];
+  // to_amount กับ to_currency ต้องมี ไม่งั้นการโอนข้ามสกุลเงินจะเพี้ยนตอนนำเข้ากลับ
+  // ปลายทางจะได้รับยอดของต้นทางแทนยอดจริงที่เข้าบัญชี
+  const head = ["date", "type", "account", "to_account", "amount", "currency", "to_amount", "to_currency",
+    "category", "payee", "note", "tags", "cleared", "splits"];
   const lines = [head.join(",")];
   allTx().slice().reverse().forEach(x => {
     const a = accById(x.acct), to = x.to ? accById(x.to) : null;
     lines.push([
       x.date, x.type, a ? a.name : "", to ? to.name : "", x.amount, a ? a.currency : S.settings.currency,
+      x.toAmount == null ? "" : x.toAmount, to ? to.currency : "",
       x.splits || !x.cat ? "" : catFull(x.cat), x.payee || "", x.note || "", (x.tags || []).join(";"), x.cleared ? "1" : "0",
-      x.splits ? x.splits.map(s => catFull(s.cat) + ":" + s.amount).join("|") : ""
+      // บรรทัดที่ไม่ระบุหมวดต้องเขียนเป็นค่าว่าง ไม่ใช่ชื่อ "ไม่ระบุหมวด"
+      // ไม่งั้นนำเข้ากลับแล้วจะได้หมวดจริงชื่อนั้นเพิ่มมาเอง
+      x.splits ? x.splits.map(s => (s.cat ? catFull(s.cat) : "") + ":" + s.amount).join("|") : ""
     ].map(csvCell).join(","));
   });
   return lines.join("\r\n");
@@ -2958,6 +2981,8 @@ function importCSVText(text) {
     to: col(["to_account", "to account", "เข้าบัญชี", "transfer to"]),
     amount: col(["amount", "จำนวน", "จำนวนเงิน", "value", "total"]),
     cur: col(["currency", "สกุลเงิน"]),
+    toAmt: col(["to_amount", "to amount", "จำนวนที่เข้าบัญชี", "จำนวนปลายทาง"]),
+    toCur: col(["to_currency", "to currency", "สกุลเงินปลายทาง"]),
     cat: col(["category", "หมวด", "หมวดหมู่", "categories"]),
     payee: col(["payee", "ร้าน", "ผู้รับ", "merchant", "description", "name"]),
     note: col(["note", "notes", "บันทึก", "memo", "comment"]),
@@ -2977,8 +3002,13 @@ function importCSVText(text) {
     else if (/expense|รายจ่าย|จ่าย|debit|withdraw/.test(type)) type = "expense";
     else type = num < 0 ? "expense" : "income";
     const cur = C.cur >= 0 ? String(r[C.cur] || "").trim().toUpperCase() : "";
+    const toCur = C.toCur >= 0 ? String(r[C.toCur] || "").trim().toUpperCase() : "";
     const acct = ensureAccount(C.acct >= 0 ? r[C.acct] : "", CUR_SYM[cur] ? cur : "");
-    const to = type === "transfer" ? ensureAccount(C.to >= 0 ? r[C.to] : (LANG === "th" ? "ปลายทาง" : "Destination"), CUR_SYM[cur] ? cur : "") : null;
+    // บัญชีปลายทางต้องใช้สกุลเงินของตัวเอง ไม่ใช่ของต้นทาง ไม่งั้นบัญชีต่างสกุลจะถูก
+    // สร้างด้วยสกุลผิดและยอดทั้งบัญชีจะอ่านผิดไปหมด
+    const to = type === "transfer" ? ensureAccount(C.to >= 0 ? r[C.to] : (LANG === "th" ? "ปลายทาง" : "Destination"),
+      CUR_SYM[toCur] ? toCur : (CUR_SYM[cur] ? cur : "")) : null;
+    const toAmt = type === "transfer" && C.toAmt >= 0 ? parseAmount(r[C.toAmt]) : null;
     const kind = type === "income" ? "income" : "expense";
     const amt = r2(Math.abs(num));
     let splits = null;
@@ -2995,7 +3025,7 @@ function importCSVText(text) {
       }
     }
     const tx = {
-      id: uid(), date: date, type: type, acct: acct, to: to, amount: amt, toAmount: null,
+      id: uid(), date: date, type: type, acct: acct, to: to, amount: amt, toAmount: toAmt || null,
       cat: type === "transfer" || splits ? null : ensureCategory(C.cat >= 0 ? r[C.cat] : "", kind),
       payee: type === "transfer" ? "" : String(C.payee >= 0 ? r[C.payee] : "").trim(),
       note: String(C.note >= 0 ? r[C.note] : "").trim(),
@@ -3053,13 +3083,21 @@ function backupJSON() {
 function restoreJSON(text) {
   let d;
   try { d = JSON.parse(text); } catch (e) { toast(LANG === "th" ? "ไฟล์ไม่ถูกต้อง" : "Invalid file"); return; }
-  if (!d || d.app !== "bahtbook" || !d.accounts) { toast(LANG === "th" ? "ไม่ใช่ไฟล์สำรองของแอพนี้" : "Not a backup from this app"); return; }
+  const arr = v => (Array.isArray(v) ? v : []);
+  const obj = v => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
+  if (!d || d.app !== "bahtbook" || !Array.isArray(d.accounts)) { toast(LANG === "th" ? "ไม่ใช่ไฟล์สำรองของแอพนี้" : "Not a backup from this app"); return; }
   confirmSheet(LANG === "th" ? "แทนที่ข้อมูลทั้งหมดด้วยไฟล์นี้?" : "Replace all data with this file?", t("yes"), () => {
+    // รุ่นถัดไปเสมอ แม้ไฟล์ที่กู้คืนจะเก่ากว่า เครื่องอื่นจะได้รู้ว่าต้องทิ้งของเดิมทั้งชุด
+    const nextGen = (Number(S.index.gen) || 0) + 1;
     Object.keys(S.tx).forEach(mk => lsDel("m_" + mk));
-    S.settings = Object.assign(DEFAULT_SETTINGS(), d.settings || {});
-    S.accounts = d.accounts || []; S.categories = d.categories || []; S.payees = d.payees || [];
-    S.recurring = d.recurring || []; S.budgets = d.budgets || { tpl: {}, m: {}, roll: {} };
-    S.tx = d.tx || {}; S.index = { months: d.index && d.index.months ? d.index.months : {} };
+    S.settings = Object.assign(DEFAULT_SETTINGS(), obj(d.settings));
+    S.accounts = arr(d.accounts); S.categories = arr(d.categories); S.payees = arr(d.payees);
+    S.recurring = arr(d.recurring);
+    const b = obj(d.budgets);
+    S.budgets = { tpl: obj(b.tpl), m: obj(b.m), roll: obj(b.roll) };
+    const tx = obj(d.tx);
+    S.tx = {}; Object.keys(tx).forEach(mk => { if (/^\d{4}-\d{2}$/.test(mk) && Array.isArray(tx[mk])) S.tx[mk] = tx[mk]; });
+    S.index = { months: obj(obj(d.index).months), gen: nextGen };
     S.del = {};
     Object.keys(S.tx).forEach(mk => { if (!S.index.months[mk]) S.index.months[mk] = 1; });
     LANG = S.settings.lang || LANG; invalidate(); applyTheme();
