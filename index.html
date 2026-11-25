@@ -931,9 +931,19 @@ const driveBackend = {
       if (await this.requestToken(false)) res = await run();
     }
     if (!res.ok) {
-      const err = new Error("drive " + res.status);
-      err.code = res.status === 401 || res.status === 403 ? "invalid_argument" : "unavailable";
+      /* Drive ใช้ 403 ทั้งกับเรื่องที่ลองใหม่แล้วได้ (ถูกจำกัดอัตรา) และเรื่องที่ลองกี่ครั้ง
+         ก็ไม่ได้ (ไม่มีสิทธิ์ในไฟล์) ต้องแยกด้วยเหตุผลในเนื้อความ ถ้าเหมาว่าแก้ไม่ได้
+         แล้วล้างคิวทิ้ง การบันทึกช่วงที่ถูกจำกัดอัตราจะหายไปโดยผู้ใช้ไม่รู้ตัว
+         ส่วน 401 ก็ต้องเก็บไว้ลองใหม่ เพราะแค่ต้องเข้าสู่ระบบอีกครั้งเท่านั้น */
+      let reason = "";
+      try { const j = JSON.parse(await res.text()); const e = (j && j.error) || {}; reason = (e.errors && e.errors[0] && e.errors[0].reason) || e.status || ""; } catch (e) {}
+      const err = new Error("drive " + res.status + (reason ? " " + reason : ""));
+      if (/rateLimit|backendError|internalError/i.test(reason)) err.code = "unavailable";
+      else if (/storageQuotaExceeded/i.test(reason)) err.code = "quota_exceeded";
+      else if (res.status === 400 || res.status === 403 || res.status === 404) err.code = "invalid_argument";
+      else err.code = "unavailable";
       err.status = res.status;
+      err.reason = reason;
       throw err;
     }
     return res;
@@ -2956,7 +2966,7 @@ function importCSVText(text) {
     splits: col(["splits"])
   };
   if (C.date < 0 || C.amount < 0) { toast(LANG === "th" ? "ต้องมีคอลัมน์ date และ amount" : "Needs date and amount columns"); return; }
-  const touched = {}; let n = 0, bad = 0;
+  const touched = {}; let n = 0, bad = 0, fixed = 0;
   rows.slice(1).forEach(r => {
     const date = normDate(r[C.date]);
     const num = parseSignedAmount(r[C.amount]);
@@ -2970,13 +2980,22 @@ function importCSVText(text) {
     const acct = ensureAccount(C.acct >= 0 ? r[C.acct] : "", CUR_SYM[cur] ? cur : "");
     const to = type === "transfer" ? ensureAccount(C.to >= 0 ? r[C.to] : (LANG === "th" ? "ปลายทาง" : "Destination"), CUR_SYM[cur] ? cur : "") : null;
     const kind = type === "income" ? "income" : "expense";
+    const amt = r2(Math.abs(num));
     let splits = null;
     if (C.splits >= 0 && String(r[C.splits] || "").trim()) {
       splits = String(r[C.splits]).split("|").map(p => { const i = p.lastIndexOf(":"); return { cat: ensureCategory(p.slice(0, i), kind), amount: r2(Math.abs(parseFloat(p.slice(i + 1)) || 0)), note: "" }; }).filter(s => s.amount > 0);
       if (!splits.length) splits = null;
+      else {
+        // ยอดแยกหมวดต้องรวมได้เท่ายอดรายการ ไม่งั้นหน้าสรุปจะขัดกันเอง
+        // รายจ่ายรวมนับจากยอดรายการ แต่ "แยกตามหมวด" กับงบประมาณนับจากบรรทัดแยก
+        // ตัวแก้ไขในแอพกันไว้แล้ว แต่ไฟล์ที่นำเข้ามาไม่ได้ผ่านด่านนั้น
+        const sum = r2(splits.reduce((s, x) => s + x.amount, 0));
+        if (sum > amt + 0.009) { splits = null; fixed++; }                                  // แยกเกินยอด ใช้หมวดเดียวแทน
+        else if (sum < amt - 0.009) { splits.push({ cat: null, amount: r2(amt - sum), note: "" }); fixed++; }   // ขาดไป ยกส่วนที่เหลือเป็นไม่ระบุหมวด
+      }
     }
     const tx = {
-      id: uid(), date: date, type: type, acct: acct, to: to, amount: r2(Math.abs(num)), toAmount: null,
+      id: uid(), date: date, type: type, acct: acct, to: to, amount: amt, toAmount: null,
       cat: type === "transfer" || splits ? null : ensureCategory(C.cat >= 0 ? r[C.cat] : "", kind),
       payee: type === "transfer" ? "" : String(C.payee >= 0 ? r[C.payee] : "").trim(),
       note: String(C.note >= 0 ? r[C.note] : "").trim(),
@@ -2992,7 +3011,9 @@ function importCSVText(text) {
   persist("accounts"); persist("categories");
   Object.keys(touched).forEach(mk => persistMonth(mk));
   render();
-  toast((LANG === "th" ? "นำเข้า " : "Imported ") + n + (LANG === "th" ? " รายการ" : " entries") + (bad ? (LANG === "th" ? " · ข้าม " : " · skipped ") + bad : ""));
+  toast((LANG === "th" ? "นำเข้า " : "Imported ") + n + (LANG === "th" ? " รายการ" : " entries") +
+    (bad ? (LANG === "th" ? " · ข้าม " : " · skipped ") + bad : "") +
+    (fixed ? (LANG === "th" ? " · แก้ยอดแยกหมวด " : " · splits adjusted ") + fixed : ""));
 }
 function pickFile(accept, cb) {
   const inp = document.createElement("input");
