@@ -2233,7 +2233,9 @@ function netWorthAt(dateStr) {
     else { if (x.acct in b) b[x.acct] -= amt; if (x.to in b) b[x.to] += Number(x.toAmount) || amt; }
   });
   let tot = 0;
-  S.accounts.forEach(a => { if (!a.archived) tot += toBase(b[a.id] || 0, a.currency); });
+  // ต้องนับบัญชีที่เก็บเข้ากรุด้วย ให้ตรงกับ netWorth() ที่หน้าภาพรวมใช้
+  // ไม่งั้นมูลค่าสุทธิหน้ารายงานกับหน้าภาพรวมจะคนละตัวเลข ต่างกันเท่ายอดในกรุพอดี
+  S.accounts.forEach(a => { tot += toBase(b[a.id] || 0, a.currency); });
   return r2(tot);
 }
 RENDERERS.reports = function () {
@@ -2784,7 +2786,29 @@ RENDERERS.settings = function () {
 
 RENDERERS.after_settings = function (host) {
   const cur = $("#set-cur", host);
-  if (cur) cur.addEventListener("change", () => { S.settings.currency = cur.value; persist("settings"); render(); });
+  if (cur) cur.addEventListener("change", () => {
+    const from = S.settings.currency, to = cur.value;
+    if (from === to) return;
+    /* ตารางอัตราเก็บว่า "1 หน่วยสกุลนั้น = กี่หน่วยสกุลหลัก" พอเปลี่ยนสกุลหลัก
+       ตัวเลขทั้งตารางจึงใช้ไม่ได้อีก ถ้าปล่อยไว้เฉยๆ ยอดรวมทั้งแอพจะผิดเงียบๆ
+       จนกว่าผู้ใช้จะกรอกใหม่เองทีละสกุล ถ้ารู้อัตราของสกุลหลักใหม่อยู่แล้ว
+       ก็คิดกลับให้ได้ทั้งตาราง รวมถึงอัตราของสกุลหลักเดิมที่ต้องมีเพิ่มเข้ามา */
+    const old = S.settings.rates || {};
+    const perNewBase = Number(old[to]) || 0;      // 1 (สกุลหลักใหม่) = perNewBase (สกุลหลักเดิม)
+    const r6 = n => Math.round(n * 1e6) / 1e6;
+    const next = {};
+    if (perNewBase > 0) {
+      next[from] = r6(1 / perNewBase);
+      Object.keys(old).forEach(c => {
+        if (c === to || c === from) return;
+        const v = Number(old[c]) || 0;
+        if (v > 0) next[c] = r6(v / perNewBase);
+      });
+    }
+    S.settings.currency = to;
+    S.settings.rates = next;                      // คิดกลับไม่ได้ก็ล้างทิ้ง แถบเตือนจะบอกให้กรอกใหม่
+    persist("settings"); invalidate(); render();
+  });
   $$("[data-rate]", host).forEach(inp => inp.addEventListener("change", () => {
     const v = parseFloat(String(inp.value).replace(/,/g, ""));
     if (v > 0) S.settings.rates[inp.dataset.rate] = v; else delete S.settings.rates[inp.dataset.rate];
