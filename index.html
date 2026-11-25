@@ -513,8 +513,10 @@ function fmt(n, cur, opt) {
 function fmtShort(n, cur) {
   const v = Math.abs(Number(n) || 0), sym = CUR_SYM[cur || S.settings.currency] || "";
   const s = (Number(n) || 0) < 0 ? "-" : "";
-  if (v >= 1e9) return s + sym + (v / 1e9).toFixed(1) + "B";
-  if (v >= 1e6) return s + sym + (v / 1e6).toFixed(1) + "M";
+  // เส้นแบ่งต้องเผื่อการปัดเศษของชั้นที่เล็กกว่า ไม่งั้น 999,500 จะถูกปัดเป็น "฿1000K"
+  // แทนที่จะเป็น "฿1.0M" เช่นเดียวกับ 999,950,000 ที่จะออกมาเป็น "฿1000.0M"
+  if (v >= 999950000) return s + sym + (v / 1e9).toFixed(1) + "B";
+  if (v >= 999500) return s + sym + (v / 1e6).toFixed(1) + "M";
   if (v >= 1e4) return s + sym + Math.round(v / 1e3) + "K";
   return s + sym + Math.round(v).toLocaleString("en-US");
 }
@@ -537,7 +539,10 @@ function evalArith(s) {
 function parseAmount(str) {
   const s = String(str == null ? "" : str).replace(/[,\s฿$€£¥]/g, "");
   if (!s) return null;
-  if (/^[0-9+\-*/().]+$/.test(s)) { const v = evalArith(s); if (isFinite(v)) return r2(Math.abs(v)); }
+  // ถ้าหน้าตาเป็นสูตรคำนวณ ก็ต้องคิดให้ออกเป็นตัวเลขจริงเท่านั้น
+  // เดิมถ้าคิดไม่ออกจะตกไป parseFloat ซึ่งหยิบเลขตัวแรกมาใช้เงียบๆ
+  // "120/0" เลยกลายเป็น 120 และ "5+" กลายเป็น 5 ทั้งที่ควรบอกว่ากรอกผิด
+  if (/^[0-9+\-*/().]+$/.test(s)) { const v = evalArith(s); return isFinite(v) ? r2(Math.abs(v)) : null; }
   const v = parseFloat(s);
   return isFinite(v) ? r2(Math.abs(v)) : null;
 }
@@ -548,6 +553,12 @@ const monthStart = k => k + "-01";
 function monthEnd(k) { const [y, m] = k.split("-").map(Number); return iso(new Date(y, m, 0)); }
 function addMonthKey(k, n) { const [y, m] = k.split("-").map(Number); const d = new Date(y, m - 1 + n, 1); return iso(d).slice(0, 7); }
 function daysInMonth(k) { const [y, m] = k.split("-").map(Number); return new Date(y, m, 0).getDate(); }
+/* วันที่ที่มีอยู่จริงบนปฏิทินเท่านั้น กัน 30 ก.พ. หรือเดือนที่ 25 หลุดเข้าไปตอนนำเข้า CSV */
+function validYMD(y, m, d) {
+  if (!(y >= 1000 && y <= 9999)) return false;
+  if (!(m >= 1 && m <= 12) || !(d >= 1)) return false;
+  return d <= new Date(y, m, 0).getDate();
+}
 const TH_MON = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 const EN_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function monthLabel(k, withYear) {
@@ -1506,26 +1517,34 @@ function postRecurring(rec, dateOverride) {
 }
 function advanceRecurring(rec) {
   rec.next = advance(rec.next, rec.freq, rec.every, rec.anchorDay);
-  if (rec.end && rec.next > rec.end) { S.recurring = S.recurring.filter(r => r.id !== rec.id); return false; }
+  if (rec.end && rec.next > rec.end) {
+    // ต้องทิ้ง tombstone ไว้ด้วย ไม่งั้นเครื่องอื่นที่ยังมีรายการนี้อยู่จะส่งกลับมาตอนรวมข้อมูล
+    // แล้วรายการที่หมดอายุไปแล้วจะโผล่กลับมาไม่จบ
+    markDeleted("recurring", rec.id);
+    S.recurring = S.recurring.filter(r => r.id !== rec.id);
+    return false;
+  }
   return true;
 }
 function postDueRecurring() {
-  const today = todayISO(); const touched = {}; let n = 0;
+  const today = todayISO(); const touched = {}; let n = 0, moved = 0;
   S.recurring.slice().forEach(rec => {
     if (!rec.auto) return;
     let guard = 0;
     while (rec.next && rec.next <= today && guard++ < 60) {
+      moved = 1;        // วันถัดไปขยับหรือรายการถูกปิด ต้องบันทึกแม้ไม่ได้ลงรายการใหม่เลย
       const id = "rec-" + rec.id + "-" + rec.next;
-      const already = (S.tx[mkey(rec.next)] || []).some(x => x.id === id);
+      const mk = mkey(rec.next);
+      // เคยลบทิ้งไปแล้วก็อย่าลงซ้ำ ไม่งั้นเครื่องที่ยังตามไม่ทันจะลงใหม่ด้วย updatedAt ที่ใหม่กว่า
+      // แล้วรายการที่ผู้ใช้ลบไปแล้วจะฟื้นกลับมาตอนรวมข้อมูล
+      const already = (S.tx[mk] || []).some(x => x.id === id) || !!(S.del["m_" + mk] || {})[id];
       if (!already) { const r = postRecurring(rec); touched[r.mk] = 1; n++; }
       if (!advanceRecurring(rec)) break;
     }
   });
-  if (n) {
-    Object.keys(touched).forEach(mk => persistMonth(mk));
-    persist("recurring");
-    toast((LANG === "th" ? "ลงรายการประจำให้แล้ว " : "Posted ") + n + (LANG === "th" ? " รายการ" : " scheduled entries"));
-  }
+  if (n) Object.keys(touched).forEach(mk => persistMonth(mk));
+  if (moved) persist("recurring");
+  if (n) toast((LANG === "th" ? "ลงรายการประจำให้แล้ว " : "Posted ") + n + (LANG === "th" ? " รายการ" : " scheduled entries"));
 }
 </script>
 <script>
@@ -2838,12 +2857,25 @@ function parseSignedAmount(v) {
   if (!isFinite(n)) return NaN;
   return neg ? -Math.abs(n) : Math.abs(n);
 }
+/* คืน null เมื่ออ่านวันที่ไม่ออกหรือวันที่นั้นไม่มีอยู่จริง ตัวนำเข้าจะนับเป็นแถวเสียและข้ามไป
+   ดีกว่าปล่อยให้ "2026-25-11" หลุดเข้าไปเป็นเดือนที่ 25 ซึ่งไม่มีวันโผล่ในหน้าไหนเลย */
 function normDate(v) {
   const s = String(v || "").trim();
-  let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
-  if (m) return m[1] + "-" + String(m[2]).padStart(2, "0") + "-" + String(m[3]).padStart(2, "0");
-  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
-  if (m) { let y = +m[3]; if (y > 2400) y -= 543; return y + "-" + String(m[2]).padStart(2, "0") + "-" + String(m[1]).padStart(2, "0"); }
+  const pad = n => String(n).padStart(2, "0");
+  const ok = (y, m, d) => validYMD(y, m, d) ? y + "-" + pad(m) + "-" + pad(d) : null;
+  const ce = y => (y > 2400 ? y - 543 : y);      // พ.ศ. -> ค.ศ.
+
+  let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)/);
+  if (m) return ok(ce(+m[1]), +m[2], +m[3]);     // เดิมลืมแปลง พ.ศ. ในรูปแบบนี้
+
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?!\d)/);
+  if (m) {
+    const y = ce(+m[3]), a = +m[1], b = +m[2];
+    // ไทยกับยุโรปเขียนวันก่อน อเมริกาเขียนเดือนก่อน ถ้าฝั่งไหนเกิน 12 ก็รู้แน่ว่าฝั่งนั้นคือวัน
+    if (a > 12 && b <= 12) return ok(y, b, a);
+    if (b > 12 && a <= 12) return ok(y, a, b);   // เดิมอ่าน 11/25/2026 เป็นเดือนที่ 25
+    return ok(y, b, a);                          // กำกวมทั้งคู่ ยึดแบบไทย วัน/เดือน/ปี
+  }
   const d = new Date(s);
   return isNaN(d) ? null : iso(d);
 }
