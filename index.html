@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<script src="https://accounts.google.com/gsi/client" async></script>
 <style>
 :root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 body{margin:0;font:14px system-ui,sans-serif}
@@ -11,13 +12,13 @@ img{max-width:100%}
 </style>
 </head>
 <body>
-<title>BahtBook Finance</title>
+<title>Budget &amp; Finance</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Sarabun:wght@300;400;500;600;700&family=Trirong:wght@400;500;600&display=swap">
 <style>
 /* ───────────────────────────────────────────────────────────────────────────
-   BahtBook — "สมุดบัญชี"
+   Budget & Finance — "สมุดบัญชี"
 
    The page is a sheet of ledger paper, not a stack of cards. Structure comes
    from ruled lines and from where the figures sit, so almost nothing has a
@@ -276,6 +277,12 @@ textarea.inp{min-height:58px;resize:vertical;border:1px solid var(--rule);paddin
 .lg-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 svg.chart{display:block;width:100%;height:auto;max-width:100%}
 
+#signin{position:fixed;inset:0;z-index:85;background:var(--paper);display:flex;align-items:center;justify-content:center;padding:24px}
+.signin-box{max-width:360px;width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:14px;border-top:1px solid var(--ink);padding-top:22px}
+.signin-box h2{font-family:var(--f-display);font-size:25px;font-weight:600;letter-spacing:.01em}
+.signin-box p{margin:0;font-size:13.5px;color:var(--ink-dim);line-height:1.6}
+.signin-box .btn.p{align-self:stretch;justify-content:center;padding-block:10px;font-size:14.5px}
+.signin-box .hint{border-top:1px solid var(--rule);padding-top:12px;width:100%}
 #lock{position:fixed;inset:0;z-index:80;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px}
 .pin-dots{display:flex;gap:12px}
 .pin-dots i{width:11px;height:11px;border:1px solid var(--ink);display:block}
@@ -299,8 +306,8 @@ svg.chart{display:block;width:100%;height:auto;max-width:100%}
     <div class="brand">
       <div class="brand-mark">฿</div>
       <div style="min-width:0">
-        <div class="brand-name">BahtBook</div>
-        <div class="brand-sub">BUDGET &amp; FINANCE</div>
+        <div class="brand-name">Budget &amp; Finance</div>
+        <div class="brand-sub">สมุดบัญชีส่วนตัว</div>
       </div>
     </div>
     <div id="sidenav"></div>
@@ -322,8 +329,18 @@ svg.chart{display:block;width:100%;height:auto;max-width:100%}
 <div id="scrim"></div>
 <div id="sheet-host"></div>
 <div id="toast" role="status" aria-live="polite"></div>
+<div id="signin" class="hide">
+  <div class="signin-box">
+    <div class="brand-mark" style="width:42px;height:42px;font-size:21px">฿</div>
+    <h2 id="si-name"></h2>
+    <p id="si-lede"></p>
+    <button class="btn p" id="si-google"></button>
+    <button class="btn g sm" id="si-skip"></button>
+    <p class="hint" id="si-note"></p>
+  </div>
+</div>
 <div id="lock" class="hide">
-  <div class="brand-mark" style="width:46px;height:46px;border-radius:14px;font-size:22px">฿</div>
+  <div class="brand-mark" style="width:46px;height:46px;font-size:22px">฿</div>
   <div style="text-align:center">
     <div style="font-weight:600;font-size:16px" id="lock-title">ใส่รหัส PIN</div>
     <div class="hint" id="lock-sub">ปลดล็อกเพื่อดูข้อมูลการเงิน</div>
@@ -334,8 +351,28 @@ svg.chart{display:block;width:100%;height:auto;max-width:100%}
 </div>
 <script>
 "use strict";
+/* ============================ ตั้งค่าการเชื่อมต่อ ============================
+   googleClientId — OAuth client ID แบบ "Web application" จาก Google Cloud
+   ปล่อยว่างไว้ได้: แอพจะไม่แสดงปุ่มเข้าสู่ระบบด้วย Google และทำงานแบบเก็บในเครื่อง
+   แทน ส่วนเวอร์ชันที่รันใน Claude artifact ไม่สนใจค่านี้ เพราะใช้คลาวด์ของตัวเอง
+
+   สิ่งที่ต้องตั้งใน Google Cloud ฝั่งนั้น
+     · เปิดใช้ Google Drive API
+     · สร้าง OAuth client แบบ Web application
+     · ใส่ Authorized JavaScript origins ให้ตรงกับโดเมนที่วางแอพ เช่น
+       https://<ชื่อผู้ใช้>.github.io   (ไม่ต้องใส่ path ต่อท้าย)
+     · ขอ scope เดียวคือ drive.file ซึ่งเห็นเฉพาะไฟล์ที่แอพนี้สร้างเอง
+       มองไม่เห็นไฟล์อื่นใน Drive ของผู้ใช้เลย                                */
+const APP_NAME = "Budget & Finance";
+const CONFIG = {
+  googleClientId: "",
+  driveFileName: "bahtbook-data.json"
+};
+</script>
+<script>
+"use strict";
 /* =========================================================================
-   BahtBook Finance -- personal finance ledger
+   Budget & Finance -- personal finance ledger
    Data lives per viewer under data/users/<id>/ (private), mirrored to
    localStorage so the register paints before the store answers.
    ========================================================================= */
@@ -603,10 +640,7 @@ const UI = {
   rep: { mode: "last6", from: "", to: "", page: "cat" },
   sheet: null, pinState: null, booted: false
 };
-const Sync = { db: null, user: null, id: null, status: "local", queue: {}, revs: {}, dirty: {}, flushTimer: null };
-/* Served as a plain web page rather than inside the artifact viewer: there is no
-   cloud to sync with at all, so say so instead of hinting at a sign-in. */
-const IS_DEMO = !(typeof window !== "undefined" && window.claude && window.claude.use);
+const Sync = { id: null, label: "", status: "local", queue: {}, revs: {}, dirty: {}, flushTimer: null };
 
 const catName = c => (LANG === "en" && c && c.en ? c.en : c ? c.name : "");
 const acctName = a => (LANG === "en" && a && a.en ? a.en : a ? a.name : "");
@@ -734,6 +768,260 @@ function rolloverFor(catId, mk) {
   }
   return r2(carry);
 }
+</script>
+<script>
+"use strict";
+/* ============================ ชั้นเก็บข้อมูล ============================
+   แอพมองข้อมูลเป็นเอกสาร JSON หลายชิ้น {key -> body} เท่านั้น ส่วนเอกสารเหล่านั้น
+   ไปอยู่ที่ไหนเป็นเรื่องของ backend ซึ่งมีสามแบบ
+
+     artifact  คลาวด์ของ Claude artifact — ของเจ้าของลิงก์คนเดียว
+     drive     Google Drive ของผู้ใช้แต่ละคน — เราไม่มีเซิร์ฟเวอร์ ไม่เห็นข้อมูล
+     local     เบราว์เซอร์เครื่องนั้นอย่างเดียว — โหมดทดลองใช้
+
+   ทุกแบบมีหน้าตาเหมือนกันหมด ตรรกะการรวมข้อมูล tombstone และกล่องรอส่ง
+   ใน store จึงใช้ร่วมกันได้โดยไม่ต้องรู้ว่าข้างล่างเป็นอะไร                  */
+
+/* ---------- artifact: คลาวด์ของ Claude ---------- */
+const artifactBackend = {
+  kind: "artifact", mergesOnWrite: false, db: null, id: null, label: "",
+  async init() {
+    if (!(window.claude && window.claude.use)) return null;
+    let user = null, db = null, id = null;
+    try { user = await window.claude.use("user"); } catch (e) {}
+    try { db = await window.claude.use("db"); } catch (e) {}
+    if (user && user.id) { try { id = await user.id(); } catch (e) {} }
+    if (!db || !id) return null;
+    this.db = db; this.id = id;
+    return { id: id };
+  },
+  col() { return this.db.collection("data/users/" + this.id); },
+  async getDoc(key) { const s = await this.col().doc(key).get(); return s.exists ? s.data() : null; },
+  setDoc(key, body) { return this.col().doc(key).set(body); },
+  delDoc(key) { return this.col().doc(key).delete(); },
+  async listKeys() { const s = await this.col().get(); return s.docs.map(d => d.id); },
+  watchAll(onDoc, onError) {
+    CORE_KEYS.forEach(k => {
+      this.col().doc(k).onSnapshot(sn => {
+        if (sn.exists && !sn.metadata.hasPendingWrites) onDoc(k, sn.data());
+      }, onError);
+    });
+  },
+  async wipe() {
+    const keys = await this.listKeys();
+    for (const k of keys) { try { await this.col().doc(k).delete(); } catch (e) {} }
+  }
+};
+
+/* ---------- drive: Google Drive ของผู้ใช้เอง ----------
+   เอกสารทุกชิ้นอยู่ในไฟล์ JSON ไฟล์เดียวที่แอพสร้างเองใน Drive ของผู้ใช้
+   เราขอ scope drive.file อย่างเดียว จึงเห็นได้เฉพาะไฟล์ที่แอพนี้สร้าง
+   โทเคนอยู่ในเบราว์เซอร์ของเขา ข้อมูลวิ่งจากเบราว์เซอร์ไป Google ตรงๆ       */
+const driveBackend = {
+  kind: "drive", mergesOnWrite: true,
+  token: null, expiresAt: 0, client: null, fileId: null, label: "",
+  cache: {}, remoteTag: null, saving: null, queued: false, pollTimer: null,
+
+  available() { return !!CONFIG.googleClientId && !(window.claude && window.claude.use); },
+
+  async waitForGis(ms) {
+    const until = Date.now() + (ms || 8000);
+    while (Date.now() < until) {
+      if (window.google && google.accounts && google.accounts.oauth2) return true;
+      await new Promise(r => setTimeout(r, 120));
+    }
+    return false;
+  },
+  loadSavedToken() {
+    try {
+      const raw = sessionStorage.getItem("bahtbook:gtoken");
+      if (!raw) return false;
+      const t = JSON.parse(raw);
+      if (t && t.token && t.expiresAt > Date.now() + 60000) { this.token = t.token; this.expiresAt = t.expiresAt; return true; }
+    } catch (e) {}
+    return false;
+  },
+  saveToken(token, expiresIn) {
+    this.token = token;
+    this.expiresAt = Date.now() + (Number(expiresIn) || 3600) * 1000;
+    try { sessionStorage.setItem("bahtbook:gtoken", JSON.stringify({ token: this.token, expiresAt: this.expiresAt })); } catch (e) {}
+  },
+  forgetToken() {
+    this.token = null; this.expiresAt = 0;
+    try { sessionStorage.removeItem("bahtbook:gtoken"); } catch (e) {}
+  },
+  /* interactive=false พยายามต่ออายุเงียบๆ ถ้าผู้ใช้เคยอนุญาตไว้แล้ว */
+  requestToken(interactive) {
+    return new Promise(resolve => {
+      if (!this.client) {
+        this.client = google.accounts.oauth2.initTokenClient({
+          client_id: CONFIG.googleClientId,
+          scope: "https://www.googleapis.com/auth/drive.file",
+          callback: () => {}
+        });
+      }
+      let done = false;
+      const finish = v => { if (!done) { done = true; resolve(v); } };
+      this.client.callback = resp => {
+        if (resp && resp.access_token) { this.saveToken(resp.access_token, resp.expires_in); finish(true); }
+        else finish(false);
+      };
+      this.client.error_callback = () => finish(false);
+      try { this.client.requestAccessToken({ prompt: interactive ? "" : "none" }); }
+      catch (e) { finish(false); }
+      if (!interactive) setTimeout(() => finish(false), 6000);
+    });
+  },
+
+  async api(url, opt) {
+    const o = opt || {};
+    const run = () => fetch(url, Object.assign({}, o, {
+      headers: Object.assign({ Authorization: "Bearer " + this.token }, o.headers || {})
+    }));
+    let res = await run();
+    if (res.status === 401) {                       // โทเคนหมดอายุ ขอใหม่เงียบๆ
+      if (await this.requestToken(false)) res = await run();
+    }
+    if (!res.ok) {
+      const err = new Error("drive " + res.status);
+      err.code = res.status === 401 || res.status === 403 ? "invalid_argument" : "unavailable";
+      err.status = res.status;
+      throw err;
+    }
+    return res;
+  },
+
+  async findOrCreateFile() {
+    const q = encodeURIComponent("name='" + CONFIG.driveFileName + "' and trashed=false");
+    const res = await this.api("https://www.googleapis.com/drive/v3/files?spaces=drive&fields=files(id,modifiedTime)&q=" + q);
+    const data = await res.json();
+    if (data.files && data.files.length) { this.fileId = data.files[0].id; this.remoteTag = data.files[0].modifiedTime; return false; }
+    const boundary = "bb" + Date.now();
+    const meta = { name: CONFIG.driveFileName, mimeType: "application/json" };
+    const body = "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(meta) +
+      "\r\n--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" + JSON.stringify({ docs: {} }) + "\r\n--" + boundary + "--";
+    const cr = await this.api("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime", {
+      method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + boundary }, body: body
+    });
+    const made = await cr.json();
+    this.fileId = made.id; this.remoteTag = made.modifiedTime;
+    return true;                                     // ไฟล์เพิ่งถูกสร้าง ยังว่าง
+  },
+  async readFile() {
+    const res = await this.api("https://www.googleapis.com/drive/v3/files/" + this.fileId + "?alt=media");
+    const txt = await res.text();
+    try { const j = JSON.parse(txt); return j && j.docs ? j.docs : {}; } catch (e) { return {}; }
+  },
+  async stat() {
+    const res = await this.api("https://www.googleapis.com/drive/v3/files/" + this.fileId + "?fields=modifiedTime");
+    return (await res.json()).modifiedTime;
+  },
+
+  async init() {
+    if (!this.available()) return null;
+    if (!(await this.waitForGis())) return null;
+    if (!this.loadSavedToken() && !(await this.requestToken(false))) return null;   // ยังไม่ได้ล็อกอิน
+    return this.afterSignIn();
+  },
+  async signIn() {
+    if (!(await this.waitForGis())) return null;
+    if (!(await this.requestToken(true))) return null;
+    return this.afterSignIn();
+  },
+  async afterSignIn() {
+    try {
+      await this.findOrCreateFile();
+      this.cache = await this.readFile();
+      this.remoteTag = await this.stat();
+      try {
+        const r = await this.api("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)");
+        this.label = ((await r.json()).user || {}).emailAddress || "";
+      } catch (e) {}
+      return { id: "drive", label: this.label };
+    } catch (e) { this.forgetToken(); return null; }
+  },
+  signOut() {
+    this.forgetToken();
+    this.fileId = null; this.cache = {}; this.remoteTag = null;
+    clearInterval(this.pollTimer); this.pollTimer = null;
+  },
+
+  async getDoc(key) { return this.cache[key] || null; },
+  async setDoc(key, body) { this.cache[key] = body; await this.save(); },
+  async delDoc(key) { delete this.cache[key]; await this.save(); },
+  async listKeys() { return Object.keys(this.cache); },
+
+  /* เขียนทั้งไฟล์ครั้งเดียว รวบการเรียกที่ซ้อนกันให้เหลือรอบเดียว */
+  save() {
+    this.queued = true;
+    if (this.saving) return this.saving;
+    this.saving = (async () => {
+      while (this.queued) { this.queued = false; await this.writeFile(); }
+    })().finally(() => { this.saving = null; });
+    return this.saving;
+  },
+  async writeFile() {
+    const tag = await this.stat();
+    if (tag !== this.remoteTag) await this.pullAndMerge();   // อีกเครื่องเขียนไว้ก่อน
+    const res = await this.api("https://www.googleapis.com/upload/drive/v3/files/" + this.fileId + "?uploadType=media&fields=modifiedTime", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ docs: this.cache })
+    });
+    this.remoteTag = (await res.json()).modifiedTime;
+  },
+  /* ดึงของจากคลาวด์มารวมกับของในเครื่อง ใช้ตรรกะรวมข้อมูลชุดเดียวกับ backend อื่น */
+  async pullAndMerge(preferLocal) {
+    const remote = await this.readFile();
+    let changed = false;
+    Object.keys(remote).forEach(k => {
+      if (mergeInto(k, remote[k], preferLocal !== false)) changed = true;
+      this.cache[k] = docBody(k);
+    });
+    Object.keys(remote).forEach(k => { if (!(k in this.cache)) this.cache[k] = remote[k]; });
+    this.remoteTag = await this.stat();
+    return changed;
+  },
+
+  /* ไม่มี realtime จึงถามไฟล์เป็นระยะตอนที่แท็บเปิดอยู่ */
+  watchAll(onDoc, onError) {
+    const tick = async () => {
+      if (document.hidden || !this.fileId || this.saving) return;
+      try {
+        const tag = await this.stat();
+        if (tag === this.remoteTag) return;
+        const remote = await this.readFile();
+        this.remoteTag = tag;
+        Object.keys(remote).forEach(k => onDoc(k, remote[k]));
+      } catch (e) { if (onError) onError(e); }
+    };
+    clearInterval(this.pollTimer);
+    this.pollTimer = setInterval(tick, 45000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
+  },
+  async wipe() { this.cache = {}; await this.save(); }
+};
+
+/* ---------- local: เบราว์เซอร์เครื่องนี้เท่านั้น ---------- */
+const localBackend = {
+  kind: "local", mergesOnWrite: false, label: "",
+  async init() { return null; },
+  async getDoc() { return null; }, async setDoc() {}, async delDoc() {},
+  async listKeys() { return []; }, watchAll() {}, async wipe() {}
+};
+
+/* Backend ที่ใช้อยู่จริง — store เรียกผ่านตัวนี้ตัวเดียว */
+let Backend = localBackend;
+async function chooseBackend() {
+  for (const b of [artifactBackend, driveBackend]) {
+    let r = null;
+    try { r = await b.init(); } catch (e) { r = null; }
+    if (r) { Backend = b; return r; }
+  }
+  Backend = localBackend;
+  return null;
+}
+/* ยังไม่ได้ล็อกอิน แต่เครื่องนี้ต่อ Google ได้ — ใช้ตัดสินใจว่าจะโชว์หน้าเข้าสู่ระบบไหม */
+function canSignInWithGoogle() { return driveBackend.available(); }
 </script>
 <script>
 "use strict";
@@ -870,7 +1158,6 @@ function loadLocal() {
   invalidate();
 }
 
-function docRef(key) { return Sync.db ? Sync.db.collection("data/users/" + Sync.id).doc(key) : null; }
 
 /* One write at a time per document. A list document is re-read and merged first,
    so a write never discards what another device added while this one was unaware.
@@ -889,7 +1176,7 @@ function scheduleFlush(delay) {
   Sync.flushTimer = setTimeout(() => { Sync.flushTimer = null; flushDirty(); }, delay || flushBackoff);
 }
 async function flushDirty() {
-  if (!Sync.db || !Sync.id) return;
+  if (Backend.kind === "local") return;
   const keys = Object.keys(Sync.dirty);
   if (!keys.length) { flushBackoff = 15000; return; }
   for (const k of keys) { await persist(k); }
@@ -907,18 +1194,18 @@ function warnOnce(msg) {
 function persist(key, opt) {
   const replace = !!(opt && opt.replace);
   lsSet(key, docBody(key));
-  if (!Sync.db || !Sync.id) return Promise.resolve();
+  if (Backend.kind === "local") return Promise.resolve();
   markDirty(key);
   const prev = Sync.queue[key] || Promise.resolve();
   const next = prev.catch(() => {}).then(async () => {
-    const ref = docRef(key); if (!ref) return;
     setStatus("syncing");
     try {
-      if (isMergeDoc(key) && !replace) {
-        const snap = await ref.get();
-        if (snap.exists && mergeInto(key, snap.data(), true)) { lsSet(key, docBody(key)); render(); }
+      // backends that merge inside their own write do not need this pre-read
+      if (isMergeDoc(key) && !replace && !Backend.mergesOnWrite) {
+        const body = await Backend.getDoc(key);
+        if (body && mergeInto(key, body, true)) { lsSet(key, docBody(key)); render(); }
       }
-      await ref.set(docBody(key));
+      await Backend.setDoc(key, docBody(key));
       clearDirty(key);
       setStatus("ok");
     } catch (err) {
@@ -958,7 +1245,7 @@ function setStatus(s) {
   let cls = "sync off", label = t("syncOff");
   if (s === "syncing") { cls = "sync"; label = t("syncing"); }
   else if (s === "ok" && !pending) { cls = "sync ok"; label = t("syncOn"); }
-  else if (Sync.db && pending) { label = (LANG === "th" ? "รอซิงก์ " : "to sync ") + pending; }
+  else if (Backend.kind !== "local" && pending) { label = (LANG === "th" ? "รอซิงก์ " : "to sync ") + pending; }
   el.className = cls;
   el.innerHTML = "<i></i><span>" + esc(label) + "</span>";
 }
@@ -976,12 +1263,8 @@ function seedBase() {
    or starting over: without it, month documents the new data does not mention
    would stay behind and reappear the next time that month is written. */
 async function wipeRemote() {
-  if (!Sync.db || !Sync.id) return;
-  const col = Sync.db.collection("data/users/" + Sync.id);
-  try {
-    const snap = await col.get();
-    for (const d of snap.docs) { try { await col.doc(d.id).delete(); } catch (e) {} }
-  } catch (e) {}
+  if (Backend.kind === "local") return;
+  try { await Backend.wipe(); } catch (e) {}
   Sync.revs = {}; Sync.dirty = {}; lsSet("_dirty", {});
 }
 function findCat(nameTh) { const c = S.categories.find(c => c.name === nameTh); return c ? c.id : null; }
@@ -1096,15 +1379,14 @@ async function boot() {
   render();
   if (S.settings.pin) showLock("unlock");
 
-  // live store, if this viewer can run it
-  let user = null, db = null;
-  try { user = window.claude && window.claude.use ? await window.claude.use("user") : null; } catch (e) {}
-  try { db = window.claude && window.claude.use ? await window.claude.use("db") : null; } catch (e) {}
-  Sync.user = user;
-  let id = null;
-  if (user && user.id) { try { id = await user.id(); } catch (e) {} }
-  if (!db || !id) { setStatus("local"); postDueRecurring(); persistAll(); render(); return; }
-  Sync.db = db; Sync.id = id;
+  // whichever store this visitor can actually reach
+  const conn = await chooseBackend();
+  if (!conn) {
+    setStatus("local"); postDueRecurring(); persistAll(); render();
+    if (canSignInWithGoogle()) showSignIn();
+    return;
+  }
+  Sync.id = conn.id; Sync.label = conn.label || "";
 
   // local cache is keyed by viewer id; re-read under the real key
   const anonSnapshot = JSON.parse(JSON.stringify({ s: S.settings, a: S.accounts, c: S.categories, p: S.payees, r: S.recurring, b: S.budgets, i: S.index, t: S.tx }));
@@ -1115,8 +1397,8 @@ async function boot() {
 
   let remote = {};
   try {
-    const snaps = await Promise.all(CORE_KEYS.map(k => docRef(k).get()));
-    CORE_KEYS.forEach((k, i) => { if (snaps[i].exists) remote[k] = snaps[i].data(); });
+    const bodies = await Promise.all(CORE_KEYS.map(k => Backend.getDoc(k)));
+    CORE_KEYS.forEach((k, i) => { if (bodies[i]) remote[k] = bodies[i]; });
   } catch (e) { setStatus("err"); }
 
   if (remote.accounts && (remote.accounts.items || []).length) {
@@ -1153,10 +1435,10 @@ async function fetchMonths(keys) {
   for (let i = 0; i < want.length; i += chunk) {
     const part = want.slice(i, i + chunk);
     try {
-      const snaps = await Promise.all(part.map(mk => docRef("m_" + mk).get()));
-      snaps.forEach((sn, j) => {
+      const bodies = await Promise.all(part.map(mk => Backend.getDoc("m_" + mk)));
+      bodies.forEach((b, j) => {
         const mk = part[j];
-        if (sn.exists) { const b = sn.data(); applyBody("m_" + mk, b); lsSet("m_" + mk, b); }
+        if (b) { applyBody("m_" + mk, b); lsSet("m_" + mk, b); }
         // A month listed in the index with no document (erased elsewhere) is
         // still "fetched" -- otherwise every index change retries it forever.
         else { S.tx[mk] = S.tx[mk] || []; Sync.revs[mk] = S.index.months[mk] || 1; }
@@ -1167,18 +1449,28 @@ async function fetchMonths(keys) {
 }
 
 function watchRemote() {
-  const onErr = () => setStatus("err");
-  CORE_KEYS.forEach(k => {
-    docRef(k).onSnapshot(sn => {
-      if (!sn.exists || sn.metadata.hasPendingWrites) return;
-      const b = sn.data();
-      if (JSON.stringify(b) === JSON.stringify(docBody(k))) return;
-      applyBody(k, b); lsSet(k, b);
-      if (k === "settings") { LANG = S.settings.lang || LANG; applyTheme(); }
-      if (k === "index") fetchMonths(Object.keys(S.index.months)).then(render);
-      render();
-    }, onErr);
-  });
+  Backend.watchAll((k, body) => {
+    if (!body) return;
+    if (JSON.stringify(body) === JSON.stringify(docBody(k))) return;
+    applyBody(k, body); lsSet(k, body);
+    if (k === "settings") { LANG = S.settings.lang || LANG; applyTheme(); }
+    if (k === "index") fetchMonths(Object.keys(S.index.months)).then(render);
+    render();
+  }, () => setStatus("err"));
+}
+
+/* ปุ่มเข้าสู่ระบบเรียกตัวนี้ พอได้สิทธิ์แล้วโหลดหน้าใหม่ เพราะโทเคนถูกเก็บไว้
+   ใน sessionStorage อยู่แล้ว การ boot รอบถัดไปจึงต่อ Drive ได้เองตั้งแต่ต้น */
+async function signInWithGoogle() {
+  const r = await driveBackend.signIn();
+  if (!r) { toast(LANG === "th" ? "เข้าสู่ระบบไม่สำเร็จ" : "Sign-in did not complete"); return false; }
+  location.reload();
+  return true;
+}
+function signOutOfGoogle() {
+  driveBackend.signOut();
+  try { Object.keys(localStorage).filter(k => k.indexOf(LS_PREFIX) === 0).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+  location.reload();
 }
 
 /* ------------- recurring ------------- */
@@ -1361,15 +1653,32 @@ function demoBanner() {
     '<span style="flex:1;min-width:160px">' + esc(t("demoBanner")) + "</span>" +
     '<button class="btn sm" data-act="rm-demo">' + esc(t("removeDemo")) + "</button></div></div>";
 }
-function demoModeBanner() {
-  if (!IS_DEMO) return "";
-  return '<div class="card notice"><div class="card-b">' +
-    "<b>" + esc(LANG === "th" ? "โหมดทดลองใช้" : "Trial mode") + "</b> — " +
-    esc(LANG === "th"
-      ? "ใช้ได้ครบทุกอย่างเหมือนตัวจริง แต่ข้อมูลเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น ไม่ซิงก์ข้ามเครื่อง และจะหายถ้าล้างข้อมูลเบราว์เซอร์ · สำรองเป็นไฟล์ได้ที่หน้าตั้งค่า"
-      : "Everything works as it does in the real app, but your data stays in this browser only. It does not sync between devices, and clearing site data erases it. You can save a backup file from Settings.") +
+function localModeBanner() {
+  if (Backend.kind !== "local") return "";
+  return '<div class="card notice"><div class="card-b" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+    '<span style="flex:1;min-width:190px">' + esc(LANG === "th"
+      ? "ยังไม่ได้เข้าสู่ระบบ ข้อมูลเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น ไม่ซิงก์ข้ามเครื่อง และจะหายถ้าล้างข้อมูลเบราว์เซอร์ · สำรองเป็นไฟล์ได้ที่หน้าตั้งค่า"
+      : "Not signed in. Your data stays in this browser only, does not sync between devices, and clearing site data erases it. You can save a backup file from Settings.") + "</span>" +
+    (canSignInWithGoogle() ? '<button class="btn sm" data-act="google-signin">' + esc(LANG === "th" ? "เข้าสู่ระบบ" : "Sign in") + "</button>" : "") +
     "</div></div>";
 }
+
+/* หน้าแรกสำหรับคนที่ยังไม่ได้เข้าสู่ระบบ */
+function showSignIn() {
+  const el = $("#signin"); if (!el) return;
+  const th = LANG === "th";
+  $("#si-name").textContent = APP_NAME;
+  $("#si-lede").textContent = th
+    ? "บันทึกรายรับรายจ่าย งบประมาณ และรายงานการเงินส่วนตัว เข้าสู่ระบบด้วยบัญชี Google ของคุณ แล้วข้อมูลจะไปเก็บใน Google Drive ของคุณเอง และตามไปทุกเครื่องที่คุณเข้าสู่ระบบ"
+    : "Track income, spending, budgets and reports. Sign in with your Google account and your data is kept in your own Google Drive, on every device you sign in to.";
+  $("#si-google").textContent = th ? "เข้าสู่ระบบด้วย Google" : "Sign in with Google";
+  $("#si-skip").textContent = th ? "ใช้งานโดยไม่เข้าสู่ระบบ" : "Use without signing in";
+  $("#si-note").textContent = th
+    ? "แอพนี้ไม่มีเซิร์ฟเวอร์ ข้อมูลวิ่งจากเบราว์เซอร์ของคุณไป Google โดยตรง เราไม่เห็นและไม่เก็บอะไรไว้เลย และขอสิทธิ์เฉพาะไฟล์ที่แอพนี้สร้างเท่านั้น ไฟล์อื่นใน Drive มองไม่เห็น"
+    : "There is no server behind this app. Your data goes from your browser straight to Google; we never see or keep any of it. The app asks only for access to the one file it creates — nothing else in your Drive.";
+  el.classList.remove("hide");
+}
+function hideSignIn() { const el = $("#signin"); if (el) el.classList.add("hide"); }
 function rateWarning() {
   const miss = missingRates();
   if (!miss.length) return "";
@@ -1522,7 +1831,7 @@ RENDERERS.overview = function () {
   const proj = dayNow ? r2((tt.expense / dayNow) * days) : 0;
   const rate = tt.income > 0 ? Math.round(((tt.income - tt.expense) / tt.income) * 100) : null;
 
-  let h = demoModeBanner() + demoBanner() + rateWarning();
+  let h = localModeBanner() + demoBanner() + rateWarning();
   // the headline figure, then a double rule, then the month's three figures in a ruled strip
   h += '<div class="ledger-head"><div class="k">' + esc(t("netWorth")) + "</div>" +
     '<div class="v' + (nw.total < 0 ? " neg" : "") + '">' + esc(fmt(nw.total)) + "</div>" +
@@ -2324,17 +2633,19 @@ RENDERERS.settings = function () {
   const card = (title, inner) => '<div class="card sec"><div class="card-h"><h2>' + esc(title) + '</h2></div><div class="card-b">' + inner + "</div></div>";
   let h = "";
 
-  const who = IS_DEMO
-    ? { title: LANG === "th" ? "โหมดทดลองใช้" : "Trial mode",
-        sub: LANG === "th" ? "ข้อมูลเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น ไม่ซิงก์ข้ามเครื่อง สำรองเป็นไฟล์ไว้ได้ด้านล่าง" : "Stored in this browser only; it does not sync between devices. Save a backup file below." }
-    : Sync.id
-      ? { title: LANG === "th" ? "ซิงก์ข้ามเครื่องเปิดอยู่" : "Syncing across your devices",
-          sub: LANG === "th" ? "ข้อมูลของคุณเป็นส่วนตัว คนอื่นที่เปิดลิงก์เดียวกันจะเห็นข้อมูลของตัวเองเท่านั้น" : "Your data is private. Anyone else opening the same link sees only their own." }
-      : { title: t("signedOut"),
-          sub: LANG === "th" ? "ข้อมูลเก็บในเบราว์เซอร์เครื่องนี้ · ลงชื่อเข้าใช้เพื่อซิงก์" : "Stored in this browser only. Sign in to sync." };
+  const th = LANG === "th";
+  const who = Backend.kind === "drive"
+    ? { title: Sync.label || (th ? "เข้าสู่ระบบด้วย Google แล้ว" : "Signed in with Google"),
+        sub: th ? "ข้อมูลเก็บเป็นไฟล์เดียวใน Google Drive ของคุณ และตามไปทุกเครื่องที่เข้าสู่ระบบบัญชีนี้" : "Kept as a single file in your own Google Drive, on every device you sign in to.",
+        action: '<button class="btn sm" data-act="google-signout">' + esc(th ? "ออกจากระบบ" : "Sign out") + "</button>" }
+    : Backend.kind === "artifact"
+      ? { title: th ? "ซิงก์ข้ามเครื่องเปิดอยู่" : "Syncing across your devices",
+          sub: th ? "ข้อมูลของคุณเป็นส่วนตัว คนอื่นที่เปิดลิงก์เดียวกันจะเห็นข้อมูลของตัวเองเท่านั้น" : "Your data is private. Anyone else opening the same link sees only their own.", action: "" }
+      : { title: th ? "ยังไม่ได้เข้าสู่ระบบ" : "Not signed in",
+          sub: th ? "ข้อมูลเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น สำรองเป็นไฟล์ไว้ได้ด้านล่าง" : "Stored in this browser only. Save a backup file below.",
+          action: canSignInWithGoogle() ? '<button class="btn sm p" data-act="google-signin">' + esc(th ? "เข้าสู่ระบบด้วย Google" : "Sign in with Google") + "</button>" : "" };
   h += card(t("you"),
-    '<div class="srow"><span class="l"><b>' + esc(who.title) + "</b><span>" + esc(who.sub) + "</span></span>" +
-    '<span class="' + (Sync.id ? "pill pos" : "pill warn") + '">' + esc(Sync.id ? t("syncOn") : t("syncOff")) + "</span></div>");
+    '<div class="srow"><span class="l"><b>' + esc(who.title) + "</b><span>" + esc(who.sub) + "</span></span>" + who.action + "</div>");
 
   h += card(t("appearance"),
     '<div class="srow"><span class="l"><b>' + esc(t("theme")) + '</b></span><div class="seg">' +
@@ -2371,7 +2682,7 @@ RENDERERS.settings = function () {
     '<p class="hint" style="margin:0">' + esc(LANG === "th" ? "เปิดลิงก์เดียวกันบนเครื่องไหนก็ได้ ข้อมูลตามไปเอง" : "Open the same link anywhere; your data follows.") + "</p>");
 
   h += '<div class="card sec"><div class="card-b" style="text-align:center;color:var(--ink-mute);font-size:12.5px">' +
-    "<b>BahtBook Finance</b> · " + Object.keys(S.index.months).length + " " + esc(t("months")) + " · " + allTx().length + " " + esc(LANG === "th" ? "รายการ" : "entries") + "</div></div>";
+    "<b>" + esc(APP_NAME) + "</b> · " + Object.keys(S.index.months).length + " " + esc(t("months")) + " · " + allTx().length + " " + esc(LANG === "th" ? "รายการ" : "entries") + "</div></div>";
   return h;
 };
 
@@ -2639,7 +2950,7 @@ function backupJSON() {
 function restoreJSON(text) {
   let d;
   try { d = JSON.parse(text); } catch (e) { toast(LANG === "th" ? "ไฟล์ไม่ถูกต้อง" : "Invalid file"); return; }
-  if (!d || d.app !== "bahtbook" || !d.accounts) { toast(LANG === "th" ? "ไม่ใช่ไฟล์สำรองของแอพนี้" : "Not a BahtBook backup"); return; }
+  if (!d || d.app !== "bahtbook" || !d.accounts) { toast(LANG === "th" ? "ไม่ใช่ไฟล์สำรองของแอพนี้" : "Not a backup from this app"); return; }
   confirmSheet(LANG === "th" ? "แทนที่ข้อมูลทั้งหมดด้วยไฟล์นี้?" : "Replace all data with this file?", t("yes"), () => {
     Object.keys(S.tx).forEach(mk => lsDel("m_" + mk));
     S.settings = Object.assign(DEFAULT_SETTINGS(), d.settings || {});
@@ -2678,6 +2989,8 @@ document.addEventListener("click", ev => {
       : "The app stops asking for a code on every device using this link. Nothing is deleted, and you can set a new code in Settings.");
     return;
   }
+  if (el.closest("#si-google")) { signInWithGoogle(); return; }
+  if (el.closest("#si-skip")) { hideSignIn(); return; }
   const goBtn = el.closest("[data-go]"); if (goBtn) { go(goBtn.dataset.go); return; }
   const acctBtn = el.closest("[data-acct]"); if (acctBtn) { UI.reg = { acct: acctBtn.dataset.acct, q: "", type: "", cat: "", from: "", to: "", uncleared: false, limit: 150 }; go("register"); return; }
   const openAcct = el.closest("[data-open-acct]"); if (openAcct) { UI.reg = { acct: openAcct.dataset.openAcct, q: "", type: "", cat: "", from: "", to: "", uncleared: false, limit: 150 }; go("register"); return; }
@@ -2711,6 +3024,11 @@ document.addEventListener("click", ev => {
     case "new-tx": txSheet(null, UI.reg.acct ? { acct: UI.reg.acct } : null); break;
     case "new-acct": acctSheet(null); break;
     case "accounts": closeAllSheets(); go("accounts"); break;
+    case "google-signin": signInWithGoogle(); break;
+    case "google-signout":
+      confirmSheet(LANG === "th" ? "ออกจากระบบ?" : "Sign out?", LANG === "th" ? "ออกจากระบบ" : "Sign out", signOutOfGoogle, false,
+        LANG === "th" ? "ข้อมูลยังอยู่ใน Google Drive ของคุณครบถ้วน เข้าสู่ระบบใหม่เมื่อไหร่ก็ได้ข้อมูลกลับมาเหมือนเดิม" : "Your data stays in your Google Drive. Signing back in brings it all back.");
+      break;
     case "cat-manage": catManager(); break;
     case "ct-new": catSheet(null); break;
     case "rec-manage": recManager(); break;
