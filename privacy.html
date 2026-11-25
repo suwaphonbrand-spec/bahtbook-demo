@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>นโยบายความเป็นส่วนตัว &mdash; Budget &amp; Finance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Trirong:wght@500;600&family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#faf7f0; --paper-2:#f3efe4; --ink:#1f1b16; --ink-2:#5c5349;
+  --rule:#d9d1c0; --rule-2:#bfb49c; --accent:#8a6a3b;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font:16px/1.75 Sarabun,system-ui,sans-serif;
+  padding:0 20px;
+}
+.wrap{max-width:720px;margin:0 auto;padding:56px 0 80px}
+.mark{
+  width:40px;height:40px;border:1.5px solid var(--ink);
+  display:flex;align-items:center;justify-content:center;
+  font:600 20px/1 Trirong,serif;margin-bottom:22px
+}
+h1{font:600 30px/1.35 Trirong,serif;margin:0 0 4px}
+.sub{color:var(--ink-2);font-size:14px;margin:0 0 6px}
+.rule{border:0;border-top:1px solid var(--ink);margin:18px 0 4px}
+.rule.thin{border-top:1px solid var(--rule);margin:34px 0 0}
+.dbl{border:0;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);height:3px;margin:0 0 34px}
+h2{font:600 19px/1.5 Trirong,serif;margin:34px 0 10px}
+p{margin:0 0 14px}
+ul{margin:0 0 14px;padding-left:22px}
+li{margin:0 0 8px}
+strong{font-weight:600}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;background:var(--paper-2);padding:1px 5px;border:1px solid var(--rule)}
+a{color:var(--accent)}
+.note{background:var(--paper-2);border-left:3px solid var(--rule-2);padding:14px 16px;margin:0 0 14px}
+footer{margin-top:48px;padding-top:16px;border-top:1px solid var(--rule);color:var(--ink-2);font-size:14px}
+footer a{color:var(--ink-2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="mark">฿</div>
+  <h1>นโยบายความเป็นส่วนตัว</h1>
+  <p class="sub">Budget &amp; Finance &mdash; ปรับปรุงล่าสุด 25 พฤศจิกายน 2569</p>
+  <hr class="rule">
+  <hr class="dbl">
+
+  <p class="note">
+    <strong>สรุปสั้น ๆ:</strong> แอพนี้ไม่มีเซิร์ฟเวอร์และไม่มีฐานข้อมูลกลาง
+    ข้อมูลการเงินของคุณอยู่ในเบราว์เซอร์ของคุณ หรือในไฟล์เดียวใน Google Drive ของคุณเอง
+    ผู้พัฒนาไม่เห็น ไม่เก็บ และไม่มีทางเข้าถึงข้อมูลเหล่านั้น
+  </p>
+
+  <h2>1. แอพนี้คืออะไร</h2>
+  <p>
+    Budget &amp; Finance เป็นแอพบันทึกรายรับรายจ่าย งบประมาณ และรายงานการเงินส่วนตัว
+    ทำงานเป็นหน้าเว็บหน้าเดียวที่รันอยู่ในเบราว์เซอร์ของคุณทั้งหมด ไม่มีค่าใช้จ่าย
+  </p>
+
+  <h2>2. ข้อมูลของคุณเก็บไว้ที่ไหน</h2>
+  <ul>
+    <li>
+      <strong>ถ้าไม่เข้าสู่ระบบ</strong> &mdash; ข้อมูลทั้งหมดถูกเก็บใน
+      <code>localStorage</code> ของเบราว์เซอร์เครื่องนั้นเครื่องเดียว ไม่ถูกส่งออกไปไหน
+      และจะหายถ้าคุณล้างข้อมูลเบราว์เซอร์
+    </li>
+    <li>
+      <strong>ถ้าเข้าสู่ระบบด้วย Google</strong> &mdash; ข้อมูลถูกเก็บเป็นไฟล์เดียวชื่อ
+      <code>bahtbook-data.json</code> ใน <strong>Google Drive ของคุณเอง</strong>
+      ข้อมูลวิ่งจากเบราว์เซอร์ของคุณไปยัง Google โดยตรง
+      ไม่ผ่านเซิร์ฟเวอร์ของผู้พัฒนาหรือของบุคคลที่สามใด ๆ
+    </li>
+  </ul>
+
+  <h2>3. สิทธิ์ที่แอพขอจาก Google</h2>
+  <p>แอพขอสิทธิ์เพียงอย่างเดียวคือ:</p>
+  <ul>
+    <li><code>https://www.googleapis.com/auth/drive.file</code></li>
+  </ul>
+  <p>
+    สิทธิ์นี้ให้แอพเห็นและแก้ไขได้ <strong>เฉพาะไฟล์ที่แอพนี้สร้างขึ้นเอง</strong> เท่านั้น
+    ไฟล์อื่นทั้งหมดใน Google Drive ของคุณ แอพมองไม่เห็นและเข้าถึงไม่ได้
+    แอพไม่ขอสิทธิ์อ่านอีเมล รายชื่อผู้ติดต่อ ปฏิทิน หรือข้อมูลอื่นใดของบัญชี Google ของคุณ
+  </p>
+  <p>
+    ข้อมูลที่ได้รับจาก Google API จะถูกใช้และส่งต่อตามข้อกำหนดของ
+    <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>
+    รวมถึงข้อกำหนด Limited Use ทุกประการ
+  </p>
+
+  <h2>4. สิ่งที่ผู้พัฒนาไม่ทำ</h2>
+  <ul>
+    <li>ไม่เก็บสำเนาข้อมูลการเงินของคุณไว้ที่ใดเลย</li>
+    <li>ไม่มีระบบวิเคราะห์การใช้งาน (analytics) ไม่มีคุกกี้ติดตาม ไม่มีโฆษณา</li>
+    <li>ไม่ขาย ไม่ให้เช่า และไม่แบ่งปันข้อมูลของคุณกับบุคคลที่สาม</li>
+    <li>ไม่ใช้ข้อมูลของคุณฝึกโมเดลปัญญาประดิษฐ์ใด ๆ</li>
+  </ul>
+
+  <h2>5. บุคคลที่สามที่เกี่ยวข้อง</h2>
+  <ul>
+    <li><strong>Google</strong> &mdash; เมื่อคุณเลือกเข้าสู่ระบบ บัญชีและไฟล์ข้อมูลของคุณอยู่ภายใต้นโยบายความเป็นส่วนตัวของ Google</li>
+    <li><strong>GitHub Pages</strong> &mdash; เป็นที่เก็บไฟล์หน้าเว็บของแอพ และอาจเก็บบันทึกการเข้าถึงหน้าเว็บตามปกติของผู้ให้บริการ</li>
+    <li><strong>Google Fonts</strong> &mdash; หน้าเว็บโหลดฟอนต์จากบริการนี้</li>
+  </ul>
+  <p>ทั้งหมดนี้ไม่มีรายใดได้รับข้อมูลการเงินในแอพของคุณ</p>
+
+  <h2>6. การลบข้อมูลและถอนสิทธิ์</h2>
+  <ul>
+    <li>ลบข้อมูลในเครื่อง: ใช้ปุ่มล้างข้อมูลในหน้าตั้งค่าของแอพ หรือล้างข้อมูลเบราว์เซอร์</li>
+    <li>ลบข้อมูลใน Drive: ลบไฟล์ <code>bahtbook-data.json</code> ใน Google Drive ของคุณ</li>
+    <li>
+      ถอนสิทธิ์ที่ให้ไว้กับแอพได้ตลอดเวลาที่
+      <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a>
+    </li>
+  </ul>
+  <p>เมื่อถอนสิทธิ์แล้ว แอพจะเข้าถึงไฟล์นั้นไม่ได้อีก ส่วนไฟล์ยังเป็นของคุณจนกว่าคุณจะลบเอง</p>
+
+  <h2>7. เด็กและเยาวชน</h2>
+  <p>แอพนี้ไม่ได้มุ่งให้บริการแก่เด็กอายุต่ำกว่า 13 ปี และไม่เก็บรวบรวมข้อมูลจากผู้ใช้กลุ่มนี้โดยเจตนา</p>
+
+  <h2>8. การเปลี่ยนแปลงนโยบาย</h2>
+  <p>หากมีการแก้ไข จะปรับวันที่ด้านบนหน้านี้ การใช้แอพต่อไปถือว่ายอมรับฉบับที่ปรับปรุงแล้ว</p>
+
+  <h2>9. ติดต่อ</h2>
+  <p>
+    สอบถามหรือแจ้งปัญหาได้ที่
+    <a href="https://github.com/suwaphonbrand-spec/bahtbook-demo/issues" target="_blank" rel="noopener">หน้า Issues ของโปรเจกต์บน GitHub</a>
+    หรืออีเมลสนับสนุนที่แสดงอยู่ในหน้าขออนุญาตของ Google ตอนเข้าสู่ระบบ
+  </p>
+
+  <hr class="rule thin">
+  <footer>
+    <a href="./">&larr; กลับไปที่แอพ</a> &nbsp;&middot;&nbsp;
+    <a href="./terms.html">ข้อกำหนดการใช้งาน</a>
+  </footer>
+
+</div>
+</body>
+</html>

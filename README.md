@@ -34,3 +34,8 @@
 ---
 
 ไฟล์ในนี้เป็นผลลัพธ์ที่ build แล้วจากโปรเจกต์หลัก เป็น HTML ไฟล์เดียวจบ ไม่มี dependency
+
+## นโยบาย
+
+- [นโยบายความเป็นส่วนตัว](https://suwaphonbrand-spec.github.io/bahtbook-demo/privacy.html)
+- [ข้อกำหนดการใช้งาน](https://suwaphonbrand-spec.github.io/bahtbook-demo/terms.html)
