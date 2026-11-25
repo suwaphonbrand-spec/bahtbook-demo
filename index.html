@@ -3,7 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#faf7f0">
+<meta name="description" content="บันทึกรายรับรายจ่าย งบประมาณ และรายงานการเงินส่วนตัว ข้อมูลเก็บใน Google Drive ของคุณเอง">
+<link rel="icon" href="icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Budget &amp; Finance">
 <script src="https://accounts.google.com/gsi/client" async></script>
+<script>
+if ("serviceWorker" in navigator) {
+  addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
+}
+</script>
 <style>
 :root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 body{margin:0;font:14px system-ui,sans-serif}
@@ -300,6 +314,18 @@ svg.chart{display:block;width:100%;height:auto;max-width:100%}
 .sync i{width:5px;height:5px;background:var(--ink-mute);display:block}
 .sync.ok i{background:var(--pos)} .sync.off i{background:var(--warn)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ---- แถบชวนติดตั้งลงเครื่อง ---- */
+#install{position:fixed;left:0;right:0;z-index:70;background:var(--paper);border-top:1px solid var(--ink);
+  bottom:calc(74px + env(safe-area-inset-bottom,0px));
+  display:none;align-items:center;gap:12px;padding:11px 16px calc(11px);font-size:13.5px;color:var(--ink)}
+#install.on{display:flex}
+#install .txt{flex:1;min-width:0;line-height:1.5}
+#install .txt b{font-weight:600}
+#install .btn{flex:none}
+#install .x{flex:none;border:0;background:none;color:var(--ink-dim);font-size:18px;line-height:1;padding:4px 6px;cursor:pointer}
+@media (min-width:900px){#install{bottom:0}}
+@media (max-width:560px){#install{font-size:12.5px;gap:8px;padding:10px 12px}}
 </style>
 <div id="app">
   <aside id="side">
@@ -3111,6 +3137,101 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) flus
 const START_PAGE = (location.hash || "").replace("#", "");
 if (["overview", "accounts", "register", "budget", "reports", "settings"].indexOf(START_PAGE) >= 0) UI.page = START_PAGE;
 boot();
+</script>
+<script>
+"use strict";
+/* ============================ ชวนติดตั้งลงเครื่อง ============================
+   Chrome/Edge/Android ยิง beforeinstallprompt มาให้ เก็บไว้แล้วค่อยเรียกตอนผู้ใช้กด
+   iPhone ไม่มีเหตุการณ์นี้ ต้องบอกวิธีกดเอง (ปุ่มแชร์ > เพิ่มไปยังหน้าจอโฮม)
+   ไม่ขึ้นในเวอร์ชันที่รันใน Claude artifact และไม่ขึ้นเมื่อเปิดจากไอคอนที่ติดตั้งแล้ว */
+(function () {
+  const HIDE_KEY = "bahtbook:installhint";
+  const HIDE_MS = 30 * 24 * 3600 * 1000;      // ปิดไปแล้วเงียบ 30 วัน ไม่ใช่ตลอดไป
+
+  function inArtifact() { return !!(window.claude && window.claude.use); }
+  function installed() {
+    try {
+      if (navigator.standalone) return true;                                  // iOS
+      return window.matchMedia("(display-mode: standalone)").matches ||
+             window.matchMedia("(display-mode: window-controls-overlay)").matches;
+    } catch (e) { return false; }
+  }
+  function muted() {
+    try { const t = Number(localStorage.getItem(HIDE_KEY)); return t > 0 && Date.now() - t < HIDE_MS; }
+    catch (e) { return false; }
+  }
+  function mute() { try { localStorage.setItem(HIDE_KEY, String(Date.now())); } catch (e) {} }
+
+  function isIOS() {
+    const ua = navigator.userAgent || "";
+    // iPadOS รุ่นใหม่รายงานตัวเองเป็น Mac ต้องดูที่จอสัมผัสประกอบ
+    return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  }
+
+  let deferred = null, bar = null;
+
+  function build(label, action) {
+    if (bar) bar.remove();
+    bar = document.createElement("div");
+    bar.id = "install";
+    const txt = document.createElement("div");
+    txt.className = "txt";
+    txt.appendChild(label);
+    bar.appendChild(txt);
+    if (action) bar.appendChild(action);
+    const x = document.createElement("button");
+    x.className = "x"; x.type = "button";
+    x.setAttribute("aria-label", LANG === "th" ? "ปิด" : "Dismiss");
+    x.textContent = "✕";
+    x.addEventListener("click", () => { mute(); bar.classList.remove("on"); });
+    bar.appendChild(x);
+    document.body.appendChild(bar);
+    bar.getBoundingClientRect();              // บังคับให้คำนวณก่อน ไม่ง้น rAF
+    bar.classList.add("on");
+  }
+
+  function showPrompt() {
+    const label = document.createElement("span");
+    label.innerHTML = LANG === "th"
+      ? "ติดตั้ง <b>Budget &amp; Finance</b> ลงเครื่องนี้"
+      : "Install <b>Budget &amp; Finance</b> on this device";
+    const go = document.createElement("button");
+    go.className = "btn p sm"; go.type = "button";
+    go.textContent = LANG === "th" ? "ติดตั้ง" : "Install";
+    go.addEventListener("click", async () => {
+      if (!deferred) return;
+      const d = deferred; deferred = null;
+      bar.classList.remove("on");
+      try {
+        d.prompt();
+        const r = await d.userChoice;
+        if (r && r.outcome === "accepted") mute();
+      } catch (e) {}
+    });
+    build(label, go);
+  }
+
+  function showIOSHint() {
+    const label = document.createElement("span");
+    label.innerHTML = LANG === "th"
+      ? "ติดตั้งลงไอโฟนได้: กดปุ่ม <b>แชร์</b> ด้านล่าง แล้วเลือก <b>เพิ่มไปยังหน้าจอโฮม</b>"
+      : "To install: tap the <b>Share</b> button, then <b>Add to Home Screen</b>";
+    build(label, null);
+  }
+
+  if (inArtifact()) return;
+
+  window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();
+    deferred = e;
+    if (!installed() && !muted()) showPrompt();
+  });
+
+  window.addEventListener("appinstalled", () => { mute(); if (bar) bar.classList.remove("on"); });
+
+  // iOS ไม่ยิงเหตุการณ์ใดเลย รอให้แอพวาดเสร็จก่อนค่อยบอกวิธี
+  if (isIOS()) setTimeout(() => { if (!installed() && !muted() && !bar) showIOSHint(); }, 2500);
+})();
 </script>
 </body>
 </html>
