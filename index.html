@@ -832,9 +832,14 @@ const driveBackend = {
     }
     return false;
   },
+  /* โทเคนอยู่ใน localStorage ไม่ใช่ sessionStorage เพื่อให้เปิดแท็บใหม่หรือปิดแล้ว
+     เปิดใหม่ภายในชั่วโมงเดียวกันใช้ต่อได้เลย ไม่ต้องกดเข้าสู่ระบบซ้ำ
+     ส่วน gseen เป็นธงถาวรว่า "เครื่องนี้เคยล็อกอินสำเร็จแล้ว" ใช้ตัดสินว่าตอนเปิดแอพ
+     ควรลองต่ออายุโทเคนเงียบๆ หรือไม่ ถ้าไม่เคยล็อกอินแล้วลอง เบราว์เซอร์จะบล็อก
+     ป๊อปอัปเพราะไม่ได้มาจากการกดของผู้ใช้ และโยน error ทิ้งไว้ใน console เปล่าๆ */
   loadSavedToken() {
     try {
-      const raw = sessionStorage.getItem("bahtbook:gtoken");
+      const raw = localStorage.getItem("bahtbook:gtoken");
       if (!raw) return false;
       const t = JSON.parse(raw);
       if (t && t.token && t.expiresAt > Date.now() + 60000) { this.token = t.token; this.expiresAt = t.expiresAt; return true; }
@@ -844,11 +849,17 @@ const driveBackend = {
   saveToken(token, expiresIn) {
     this.token = token;
     this.expiresAt = Date.now() + (Number(expiresIn) || 3600) * 1000;
-    try { sessionStorage.setItem("bahtbook:gtoken", JSON.stringify({ token: this.token, expiresAt: this.expiresAt })); } catch (e) {}
+    try {
+      localStorage.setItem("bahtbook:gtoken", JSON.stringify({ token: this.token, expiresAt: this.expiresAt }));
+      localStorage.setItem("bahtbook:gseen", "1");
+    } catch (e) {}
   },
   forgetToken() {
     this.token = null; this.expiresAt = 0;
-    try { sessionStorage.removeItem("bahtbook:gtoken"); } catch (e) {}
+    try { localStorage.removeItem("bahtbook:gtoken"); } catch (e) {}
+  },
+  wasSignedIn() {
+    try { return localStorage.getItem("bahtbook:gseen") === "1"; } catch (e) { return false; }
   },
   /* interactive=false พยายามต่ออายุเงียบๆ ถ้าผู้ใช้เคยอนุญาตไว้แล้ว */
   requestToken(interactive) {
@@ -920,7 +931,11 @@ const driveBackend = {
   async init() {
     if (!this.available()) return null;
     if (!(await this.waitForGis())) return null;
-    if (!this.loadSavedToken() && !(await this.requestToken(false))) return null;   // ยังไม่ได้ล็อกอิน
+    if (!this.loadSavedToken()) {
+      // ไม่เคยล็อกอินบนเครื่องนี้ ก็ไม่ต้องลองต่ออายุให้เสียเวลาและโดนบล็อกป๊อปอัป
+      if (!this.wasSignedIn()) return null;
+      if (!(await this.requestToken(false))) return null;                           // โทเคนหมดอายุ รอให้กดเข้าสู่ระบบเอง
+    }
     return this.afterSignIn();
   },
   async signIn() {
@@ -942,6 +957,7 @@ const driveBackend = {
   },
   signOut() {
     this.forgetToken();
+    try { localStorage.removeItem("bahtbook:gseen"); } catch (e) {}
     this.fileId = null; this.cache = {}; this.remoteTag = null;
     clearInterval(this.pollTimer); this.pollTimer = null;
   },
