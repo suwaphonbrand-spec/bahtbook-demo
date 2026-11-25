@@ -156,7 +156,16 @@ h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:0;text-wrap:balance}
 .tile .s{font-size:11px;color:var(--ink-mute);margin-top:2px}
 .tile.hero{flex-basis:100%;border-right:0;padding-bottom:14px}
 .tile.hero .v{font-size:30px}
-@media (max-width:560px){ .tile{flex-basis:46%} .tile .v{font-size:15.5px} .tile.hero .v{font-size:25px} }
+/* On a phone the strip becomes two even columns: the vertical rules would leave
+   a stranded indent on whichever figure wraps to its own row. */
+@media (max-width:560px){
+  .g3,.g4{display:grid;grid-template-columns:1fr 1fr;gap:0 18px;border-bottom:1px solid var(--rule)}
+  .tile{flex:none;border-right:0}
+  .tile+.tile{padding-left:0}
+  .tile .v{font-size:15.5px}
+  .tile.hero .v{font-size:25px}
+  .sync span{display:none}   /* keep the dot, give the title its room back */
+}
 
 .pill{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:500;color:var(--ink-dim);white-space:nowrap;padding:0}
 .pill::before{content:"";width:6px;height:6px;background:currentColor;flex:0 0 auto}
@@ -1643,7 +1652,7 @@ RENDERERS.register = function () {
   const single = f.acct ? accById(f.acct) : null;
 
   let chips = '<button class="chip" data-reg-acct="" ' + (!f.acct ? 'aria-pressed="true"' : "") + ">" + esc(t("all")) + "</button>" +
-    S.accounts.filter(a => !a.archived).map(a => '<button class="chip" data-reg-acct="' + esc(a.id) + '"' + (f.acct === a.id ? ' aria-pressed="true"' : "") + "><span style=\"width:7px;height:7px;border-radius:50%;background:" + esc(a.color || "#888") + ';display:inline-block"></span>' + esc(acctName(a)) + "</button>").join("");
+    S.accounts.filter(a => !a.archived).map(a => '<button class="chip" data-reg-acct="' + esc(a.id) + '"' + (f.acct === a.id ? ' aria-pressed="true"' : "") + "><span style=\"width:6px;height:6px;background:" + esc(a.color || "#888") + ';display:inline-block"></span>' + esc(acctName(a)) + "</button>").join("");
   let h = '<div class="scroll-x sec">' + chips + "</div>";
 
   const active = [];
@@ -1749,7 +1758,7 @@ function budgetSheet(catId) {
   const cur = budgetFor(catId, mk);
   const perMonth = S.budgets.m[mk] && S.budgets.m[mk][catId] != null;
   openSheet({
-    title: (c.icon || "📦") + " " + catName(c),
+    title: catName(c),
     body:
       '<div class="field"><label>' + esc(t("setBudget")) + " · " + esc(monthLabel(mk)) + '</label><input class="amt-inp" id="bg-amt" inputmode="decimal" data-autofocus value="' + (cur ? cur : "") + '" placeholder="0"></div>' +
       '<label class="chk"><input type="checkbox" id="bg-only"' + (perMonth ? " checked" : "") + "><span>" + esc(LANG === "th" ? "ใช้กับเดือนนี้เท่านั้น (ไม่เปลี่ยนงบประจำ)" : "This month only (keep the monthly default)") + "</span></label>" +
