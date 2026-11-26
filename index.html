@@ -2044,8 +2044,14 @@ function regFiltered() {
     if (f.uncleared && x.cleared) return false;
     if (f.cat) { const ids = [f.cat].concat(S.categories.filter(c => c.parent === f.cat).map(c => c.id)); if (!txLines(x).some(l => ids.indexOf(l.cat) >= 0)) return false; }
     if (q) {
-      const hay = [x.payee, x.note, catFull(x.cat), (x.tags || []).join(" "), String(x.amount), (x.splits || []).map(s => (s.note || "") + " " + catFull(s.cat)).join(" ")].join(" ").toLowerCase();
-      if (hay.indexOf(q) < 0) return false;
+      // ยอดเงินต้องค้นได้ทั้งแบบที่เก็บไว้ (1200.5) และแบบที่เห็นบนจอ (1,200.50)
+      // คนส่วนใหญ่พิมพ์ตามที่เห็น ไม่ได้พิมพ์ตามที่เก็บ
+      const n = v => { const f = Number(v) || 0; return String(f) + " " + f.toFixed(2); };
+      const hay = [x.payee, x.note, catFull(x.cat), (x.tags || []).join(" "), n(x.amount),
+        (x.splits || []).map(s => (s.note || "") + " " + catFull(s.cat) + " " + n(s.amount)).join(" ")].join(" ").toLowerCase();
+      // ลองทั้งคำที่พิมพ์มาตรงๆ และแบบตัดลูกน้ำออก เพื่อไม่ให้ชื่อที่มีลูกน้ำอยู่ด้วยค้นไม่เจอ
+      const qn = q.replace(/,/g, "");
+      if (hay.indexOf(q) < 0 && (qn === q || hay.indexOf(qn) < 0)) return false;
     }
     return true;
   });
