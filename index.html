@@ -419,6 +419,7 @@ const STR = {
     liability:"หนี้สินอื่น", property:"อสังหาริมทรัพย์", vehicle:"ยานพาหนะ", asset:"สินทรัพย์อื่น",
     investment:"บัญชีเงินสดเพื่อการลงทุน", savings:"ออมทรัพย์", loan:"หนี้สิน/เงินกู้", other:"อื่นๆ",
     notes:"บันทึกช่วยจำ", inBudget:"นับรวมในงบประมาณ", interestRate:"อัตราดอกเบี้ย",
+    institution:"สถาบันการเงิน", acctNumber:"เลขที่บัญชี", abbr:"ชื่อย่อ", nickname:"ชื่อเล่น", favourite:"บัญชีโปรด", minBalance:"ยอดขั้นต่ำ",
     assets:"สินทรัพย์", liabilities:"หนี้สิน", balance:"ยอดคงเหลือ", runningBal:"ยอดสะสม",
     budgeted:"ตั้งงบ", spent:"ใช้ไป", left:"เหลือ", over:"เกิน", noBudget:"ยังไม่ตั้งงบ",
     copyLast:"คัดลอกเดือนก่อน", rollover:"ยกยอดเหลือไปเดือนถัดไป", setBudget:"ตั้งงบประมาณ", totalBudget:"งบรวม",
@@ -460,6 +461,7 @@ const STR = {
     liability:"Other liability", property:"Property", vehicle:"Vehicle", asset:"Other asset",
     investment:"Investment cash account", savings:"Savings", loan:"Loan", other:"Other",
     notes:"Notes", inBudget:"Include in budget", interestRate:"Interest rate",
+    institution:"Financial institution", acctNumber:"Account number", abbr:"Abbreviation", nickname:"Nickname", favourite:"Favourite account", minBalance:"Minimum balance",
     assets:"Assets", liabilities:"Liabilities", balance:"Balance", runningBal:"Running",
     budgeted:"Budgeted", spent:"Spent", left:"Left", over:"Over", noBudget:"No budget set",
     copyLast:"Copy last month", rollover:"Roll unspent into next month", setBudget:"Set budget", totalBudget:"Total budget",
@@ -791,7 +793,24 @@ const UI = {
 const Sync = { id: null, label: "", status: "local", queue: {}, revs: {}, dirty: {}, flushTimer: null };
 
 const catName = c => (LANG === "en" && c && c.en ? c.en : c ? c.name : "");
-const acctName = a => (LANG === "en" && a && a.en ? a.en : a ? a.name : "");
+/* ชื่อที่โชว์ทุกที่คือชื่อเล่นถ้าตั้งไว้ ไม่งั้นใช้ชื่อบัญชีเต็ม
+   ชื่อเต็มยังเก็บไว้สำหรับอ้างอิงในหน้าแก้ไขและไฟล์ส่งออก */
+const acctName = a => {
+  if (!a) return "";
+  if (LANG === "en" && a.en) return a.en;
+  return a.nick || a.name;
+};
+const acctFull = a => (a ? (LANG === "en" && a.en ? a.en : a.name) : "");
+/* ชื่อย่อมีไว้ใช้ตรงที่พื้นที่แคบ เช่น ชิปตัวกรองและบรรทัดรายการ */
+const acctShort = a => (a && a.abbr ? a.abbr : acctName(a));
+/* บัญชีโปรดขึ้นก่อนเสมอ ที่เหลือเรียงตามลำดับเดิม */
+const acctSorted = list => (list || S.accounts).slice().sort((a, b) => (b.fav ? 1 : 0) - (a.fav ? 1 : 0) || (Number(a.order) || 0) - (Number(b.order) || 0));
+/* ยอดต่ำกว่าขั้นต่ำที่ตั้งไว้ ใช้เตือนในหน้าบัญชี ไม่นับบัญชีหนี้สินที่ยอดติดลบอยู่แล้ว */
+function belowMin(a, bal) {
+  const m = Number(a && a.minBalance) || 0;
+  return m > 0 && !NEGATIVE_TYPES[a.type] && (Number(bal) || 0) < m;
+}
+const favAcct = () => acctSorted(S.accounts.filter(a => !a.archived))[0] || null;
 const accById = id => S.accounts.find(a => a.id === id) || null;
 const catById = id => S.categories.find(c => c.id === id) || null;
 function catFull(id) { const c = catById(id); if (!c) return t("uncategorized"); const p = c.parent ? catById(c.parent) : null; return (p ? catName(p) + " · " : "") + catName(c); }
@@ -1838,7 +1857,7 @@ function renderSide() {
   $("#side-nw").innerHTML = '<div class="eyebrow">' + esc(t("netWorth")) + '</div><div class="v num ' + (nw.total < 0 ? "neg" : "") + '">' + esc(fmt(nw.total)) + "</div>" +
     '<div class="hint num">' + esc(t("assets")) + " " + esc(fmtShort(nw.assets)) + " · " + esc(t("liabilities")) + " " + esc(fmtShort(nw.liabilities)) + "</div>";
   $("#side-acct-label").textContent = t("accounts");
-  const act = S.accounts.filter(a => !a.archived);
+  const act = acctSorted(S.accounts.filter(a => !a.archived));
   $("#side-accts").innerHTML = act.length ? act.map(a => {
     const v = b[a.id] || 0;
     return '<button class="acct-row" data-acct="' + esc(a.id) + '"><span class="acct-dot" style="background:' + esc(a.color || "#888") + '"></span>' +
@@ -2122,16 +2141,19 @@ RENDERERS.accounts = function () {
     '<div class="tile"><div class="k">' + esc(t("liabilities")) + '</div><div class="v neg">' + esc(fmt(nw.liabilities)) + "</div></div></div>";
 
   groups.forEach(g => {
-    const list = S.accounts.filter(a => !a.archived && g.types.indexOf(a.type) >= 0);
+    const list = acctSorted(S.accounts.filter(a => !a.archived && g.types.indexOf(a.type) >= 0));
     if (!list.length) return;
     h += '<div class="card sec"><div class="card-h"><h2>' + esc(t(g.key)) + '</h2><button class="btn p sm" data-act="new-acct">' + esc(t("add")) + "</button></div><div class=\"card-b\">" +
       list.map(a => {
         const v = b[a.id] || 0;
         const util = a.type === "credit" && a.creditLimit > 0 ? Math.round((Math.abs(Math.min(0, v)) / a.creditLimit) * 100) : null;
         return '<div class="srow"><span class="acct-dot" style="width:11px;height:11px;background:' + esc(a.color || "#888") + '"></span>' +
-          '<span class="l"><b>' + esc(acctName(a)) + "</b><span>" + esc(t(a.type)) + (a.currency !== S.settings.currency ? " · " + esc(a.currency) : "") +
+          '<span class="l"><b>' + (a.fav ? "★ " : "") + esc(acctName(a)) + "</b><span>" + esc(t(a.type)) +
+          (a.institution ? " · " + esc(a.institution) : "") +
+          (a.currency !== S.settings.currency ? " · " + esc(a.currency) : "") +
           (util != null ? " · " + util + "% " + esc(LANG === "th" ? "ของวงเงิน" : "of limit") : "") +
           (Number(a.rate) > 0 ? " · " + esc(String(a.rate)) + "%" : "") +
+          (belowMin(a, v) ? " · " + esc(LANG === "th" ? "ต่ำกว่าขั้นต่ำ " : "below minimum ") + esc(fmtShort(a.minBalance, a.currency)) : "") +
           (a.inBudget === false ? " · " + esc(LANG === "th" ? "ไม่นับในงบ" : "outside budget") : "") + "</span></span>" +
           '<span class="num ' + (v < 0 ? "neg" : "") + '" style="font-weight:600">' + esc(fmt(v, a.currency)) + "</span>" +
           '<button class="icon-btn" data-open-acct="' + esc(a.id) + '" aria-label="' + esc(t("register")) + '">' + IC.register + "</button>" +
@@ -2179,7 +2201,7 @@ RENDERERS.register = function () {
   const single = f.acct ? accById(f.acct) : null;
 
   let chips = '<button class="chip" data-reg-acct="" ' + (!f.acct ? 'aria-pressed="true"' : "") + ">" + esc(t("all")) + "</button>" +
-    S.accounts.filter(a => !a.archived).map(a => '<button class="chip" data-reg-acct="' + esc(a.id) + '"' + (f.acct === a.id ? ' aria-pressed="true"' : "") + "><span style=\"width:6px;height:6px;background:" + esc(a.color || "#888") + ';display:inline-block"></span>' + esc(acctName(a)) + "</button>").join("");
+    acctSorted(S.accounts.filter(a => !a.archived)).map(a => '<button class="chip" data-reg-acct="' + esc(a.id) + '"' + (f.acct === a.id ? ' aria-pressed="true"' : "") + "><span style=\"width:6px;height:6px;background:" + esc(a.color || "#888") + ';display:inline-block"></span>' + esc(acctShort(a)) + "</button>").join("");
   let h = '<div class="scroll-x sec">' + chips + "</div>";
 
   const active = [];
@@ -2447,7 +2469,7 @@ function catOptions(kind, selected) {
   return h;
 }
 function acctOptions(selected, exclude) {
-  return S.accounts.filter(a => !a.archived || a.id === selected).map(a =>
+  return acctSorted(S.accounts.filter(a => !a.archived || a.id === selected)).map(a =>
     '<option value="' + esc(a.id) + '"' + (selected === a.id ? " selected" : "") + (exclude === a.id ? " disabled" : "") + ">" + esc(acctName(a)) + (a.currency !== S.settings.currency ? " (" + esc(a.currency) + ")" : "") + "</option>").join("");
 }
 function payeeDatalist() {
@@ -2465,7 +2487,7 @@ function rememberPayee(name, catId) {
 /* ============================ transaction editor ============================ */
 function txSheet(existing, preset) {
   const F = existing ? JSON.parse(JSON.stringify(existing)) : Object.assign({
-    id: null, date: todayISO(), type: "expense", acct: (S.accounts.find(a => !a.archived) || {}).id || "",
+    id: null, date: todayISO(), type: "expense", acct: (favAcct() || {}).id || "",
     to: null, amount: "", cat: "", payee: "", note: "", tags: [], cleared: false, splits: null, toAmount: null
   }, preset || {});
   const body = document.createElement("div");
@@ -2611,6 +2633,11 @@ function findTx(id) { return allTx().find(x => x.id === id) || null; }
 /* ============================ account editor ============================ */
 /* ชนิดบัญชีรุ่นเก่าที่เลิกให้เลือกใหม่แล้ว ต้องยังอยู่ในรายการถ้าบัญชีนี้ใช้อยู่
    ไม่งั้นพอเปิดแก้ไขแล้วกดบันทึก ชนิดจะถูกเปลี่ยนเป็นตัวแรกของรายการโดยไม่ตั้งใจ */
+/* รายชื่อสถาบันการเงินที่เคยพิมพ์ไว้ ให้พิมพ์ครั้งเดียวแล้วครั้งถัดไปเลือกได้เลย */
+function instDatalist() {
+  const names = Array.from(new Set(S.accounts.map(a => (a.institution || "").trim()).filter(Boolean))).sort();
+  return '<datalist id="inst-list">' + names.map(n => '<option value="' + esc(n) + '"></option>').join("") + "</datalist>";
+}
 function acctTypeOptions(sel) {
   const list = ACCT_TYPES.slice();
   if (sel && list.indexOf(sel) < 0) list.push(sel);
@@ -2628,14 +2655,20 @@ function acctSheet(existing) {
   const body = document.createElement("div");
   body.style.cssText = "display:flex;flex-direction:column;gap:12px";
   body.innerHTML =
-    '<div class="field"><label>' + esc(t("accountName")) + '</label><input class="inp" id="ac-name" data-autofocus value="' + esc(a.name) + '" placeholder="' + esc(LANG === "th" ? "เช่น กสิกร ออมทรัพย์" : "e.g. Main checking") + '"></div>' +
+    '<div class="row2"><div class="field"><label>' + esc(t("accountName")) + '</label><input class="inp" id="ac-name" data-autofocus value="' + esc(a.name) + '" placeholder="' + esc(LANG === "th" ? "เช่น กสิกร ออมทรัพย์" : "e.g. Main checking") + '"></div>' +
+    '<div class="field"><label>' + esc(t("nickname")) + '</label><input class="inp" id="ac-nick" value="' + esc(a.nick || "") + '" placeholder="' + esc(LANG === "th" ? "เช่น บัญชีใช้จ่าย" : "e.g. Spending") + '"></div></div>' +
     '<div class="row2"><div class="field"><label>' + esc(t("accountType")) + '</label><select class="inp" id="ac-type">' + acctTypeOptions(a.type) + "</select></div>" +
     '<div class="field"><label>' + esc(t("currency")) + '</label><select class="inp" id="ac-cur">' + curOptions(a.currency) + "</select></div></div>" +
+    '<div class="row2"><div class="field"><label>' + esc(t("institution")) + '</label><input class="inp" id="ac-inst" list="inst-list" value="' + esc(a.institution || "") + '" placeholder="' + esc(LANG === "th" ? "เช่น กสิกรไทย" : "e.g. Kasikornbank") + '">' + instDatalist() + "</div>" +
+    '<div class="field"><label>' + esc(t("acctNumber")) + '</label><input class="inp" id="ac-no" value="' + esc(a.number || "") + '" placeholder="xxx-x-xxxxx-x"></div></div>' +
+    '<div class="row2"><div class="field"><label>' + esc(t("abbr")) + '</label><input class="inp" id="ac-abbr" maxlength="8" value="' + esc(a.abbr || "") + '" placeholder="' + esc(LANG === "th" ? "เช่น KBank" : "e.g. KBank") + '"></div>' +
+    '<div class="field"><label>' + esc(t("minBalance")) + '</label><input class="inp num" id="ac-min" inputmode="decimal" value="' + esc(a.minBalance || 0) + '"></div></div>' +
     '<div class="row2"><div class="field"><label>' + esc(t("opening")) + '</label><input class="inp num" id="ac-open" inputmode="decimal" value="' + esc(a.opening) + '"></div>' +
     '<div class="field"><label>' + esc(t("interestRate")) + ' (%)</label><input class="inp num" id="ac-rate" inputmode="decimal" value="' + esc(a.rate == null ? "" : a.rate) + '" placeholder="0.00"></div></div>' +
     '<div class="field" id="ac-limit-wrap"><label>' + esc(t("creditLimit")) + '</label><input class="inp num" id="ac-limit" inputmode="decimal" value="' + esc(a.creditLimit || 0) + '"></div>' +
     '<div class="field"><label>' + esc(LANG === "th" ? "สี" : "Colour") + '</label><div class="chips" id="ac-colors">' + ACCT_COLORS.map(c => '<button class="chip" data-color="' + c + '"' + (a.color === c ? ' aria-pressed="true"' : "") + ' style="width:34px;height:28px;background:' + c + ';border-color:' + c + '"></button>').join("") + "</div></div>" +
     '<div class="field"><label>' + esc(t("notes")) + '</label><textarea class="inp" id="ac-note" rows="3" placeholder="' + esc(LANG === "th" ? "เลขบัญชี สาขา หรืออะไรก็ได้ที่อยากจำ" : "Account number, branch, anything worth remembering") + '">' + esc(a.note || "") + "</textarea></div>" +
+    '<label class="chk"><input type="checkbox" id="ac-fav"' + (a.fav ? " checked" : "") + "><span>" + esc(t("favourite")) + "</span></label>" +
     '<label class="chk"><input type="checkbox" id="ac-budget"' + (a.inBudget === false ? "" : " checked") + "><span>" + esc(t("inBudget")) + "</span></label>" +
     '<label class="chk"><input type="checkbox" id="ac-arch"' + (a.archived ? " checked" : "") + "><span>" + esc(t("archive")) + "</span></label>" +
     '<p class="hint" style="margin:0">' + esc(LANG === "th" ? "ปิด \"นับรวมในงบประมาณ\" แล้วรายจ่ายของบัญชีนี้จะไม่ถูกนับในหน้างบประมาณ แต่ยังอยู่ในรายงานและมูลค่าสุทธิตามเดิม" : "Turning off \"include in budget\" keeps this account's spending out of the budget screen; it still counts in reports and net worth.") + "</p>" +
@@ -2661,7 +2694,10 @@ function acctSheet(existing) {
         currency: $("#ac-cur", body).value, opening: r2(Number(String($("#ac-open", body).value).replace(/[, ]/g, "")) || 0),
         creditLimit: r2(Number(String($("#ac-limit", body).value).replace(/[, ]/g, "")) || 0),
         rate: Math.round((Number(String($("#ac-rate", body).value).replace(/[, %]/g, "")) || 0) * 1000) / 1000,
-        inBudget: $("#ac-budget", body).checked,
+        minBalance: r2(Number(String($("#ac-min", body).value).replace(/[, ]/g, "")) || 0),
+        nick: $("#ac-nick", body).value.trim(), abbr: $("#ac-abbr", body).value.trim(),
+        institution: $("#ac-inst", body).value.trim(), number: $("#ac-no", body).value.trim(),
+        fav: $("#ac-fav", body).checked, inBudget: $("#ac-budget", body).checked,
         color: a.color, note: $("#ac-note", body).value, archived: $("#ac-arch", body).checked,
         order: a.order != null ? a.order : S.accounts.length, updatedAt: Date.now()
       };
