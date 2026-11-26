@@ -415,7 +415,10 @@ const STR = {
     splits:"แยกหมวด", addSplit:"เพิ่มบรรทัด", unsplit:"ยกเลิกการแยก", remaining:"เหลือ",
     accountName:"ชื่อบัญชี", accountType:"ประเภท", currency:"สกุลเงิน", opening:"ยอดตั้งต้น", creditLimit:"วงเงิน",
     archived:"เก็บเข้าคลัง", archive:"เก็บเข้าคลัง", unarchive:"นำกลับมาใช้", newAccount:"บัญชีใหม่", editAccount:"แก้ไขบัญชี",
-    cash:"เงินสด", bank:"ธนาคาร", savings:"ออมทรัพย์", credit:"บัตรเครดิต", investment:"การลงทุน", loan:"หนี้สิน/เงินกู้", other:"อื่นๆ",
+    bank:"ธนาคาร", cash:"เงินสด / อื่นๆ", credit:"บัตรเครดิต / บัตรชำระ", creditline:"วงเงินสินเชื่อ",
+    liability:"หนี้สินอื่น", property:"อสังหาริมทรัพย์", vehicle:"ยานพาหนะ", asset:"สินทรัพย์อื่น",
+    investment:"บัญชีเงินสดเพื่อการลงทุน", savings:"ออมทรัพย์", loan:"หนี้สิน/เงินกู้", other:"อื่นๆ",
+    notes:"บันทึกช่วยจำ", inBudget:"นับรวมในงบประมาณ", interestRate:"อัตราดอกเบี้ย",
     assets:"สินทรัพย์", liabilities:"หนี้สิน", balance:"ยอดคงเหลือ", runningBal:"ยอดสะสม",
     budgeted:"ตั้งงบ", spent:"ใช้ไป", left:"เหลือ", over:"เกิน", noBudget:"ยังไม่ตั้งงบ",
     copyLast:"คัดลอกเดือนก่อน", rollover:"ยกยอดเหลือไปเดือนถัดไป", setBudget:"ตั้งงบประมาณ", totalBudget:"งบรวม",
@@ -453,7 +456,10 @@ const STR = {
     splits:"Splits", addSplit:"Add line", unsplit:"Remove splits", remaining:"Remaining",
     accountName:"Account name", accountType:"Type", currency:"Currency", opening:"Opening balance", creditLimit:"Credit limit",
     archived:"Archived", archive:"Archive", unarchive:"Unarchive", newAccount:"New account", editAccount:"Edit account",
-    cash:"Cash", bank:"Checking", savings:"Savings", credit:"Credit card", investment:"Investment", loan:"Loan", other:"Other",
+    bank:"Bank", cash:"Cash / Other", credit:"Credit / Charge card", creditline:"Line of credit",
+    liability:"Other liability", property:"Property", vehicle:"Vehicle", asset:"Other asset",
+    investment:"Investment cash account", savings:"Savings", loan:"Loan", other:"Other",
+    notes:"Notes", inBudget:"Include in budget", interestRate:"Interest rate",
     assets:"Assets", liabilities:"Liabilities", balance:"Balance", runningBal:"Running",
     budgeted:"Budgeted", spent:"Spent", left:"Left", over:"Over", noBudget:"No budget set",
     copyLast:"Copy last month", rollover:"Roll unspent into next month", setBudget:"Set budget", totalBudget:"Total budget",
@@ -523,8 +529,110 @@ const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&a
 const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 
-const CUR_SYM = { THB: "฿", USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥", AUD: "A$", SGD: "S$", KRW: "₩", LAK: "₭", MMK: "K", VND: "₫", MYR: "RM", PHP: "₱", INR: "₹", HKD: "HK$", TWD: "NT$", CHF: "CHF", CAD: "C$", AED: "AED" };
-const CURRENCIES = Object.keys(CUR_SYM);
+/* รหัสสกุลเงิน: [สัญลักษณ์, ชื่อไทย, ชื่ออังกฤษ] */
+const CUR = {
+  THB: ["฿", "บาทไทย", "Thai baht"],
+  USD: ["$", "ดอลลาร์สหรัฐ", "US dollar"],
+  EUR: ["€", "ยูโร", "Euro"],
+  GBP: ["£", "ปอนด์สเตอร์ลิง", "British pound sterling"],
+  JPY: ["¥", "เยนญี่ปุ่น", "Japanese yen"],
+  CNY: ["¥", "หยวนจีน", "Chinese yuan"],
+  KRW: ["₩", "วอนเกาหลีใต้", "South Korean won"],
+  SGD: ["S$", "ดอลลาร์สิงคโปร์", "Singapore dollar"],
+  MYR: ["RM", "ริงกิตมาเลเซีย", "Malaysian ringgit"],
+  HKD: ["HK$", "ดอลลาร์ฮ่องกง", "Hong Kong dollar"],
+  TWD: ["NT$", "ดอลลาร์ไต้หวันใหม่", "New Taiwan dollar"],
+  AUD: ["A$", "ดอลลาร์ออสเตรเลีย", "Australian dollar"],
+  NZD: ["NZ$", "ดอลลาร์นิวซีแลนด์", "New Zealand dollar"],
+  CAD: ["C$", "ดอลลาร์แคนาดา", "Canadian dollar"],
+  CHF: ["CHF", "ฟรังก์สวิส", "Swiss franc"],
+  INR: ["₹", "รูปีอินเดีย", "Indian rupee"],
+  IDR: ["Rp", "รูเปียห์อินโดนีเซีย", "Indonesian rupiah"],
+  PHP: ["₱", "เปโซฟิลิปปินส์", "Philippine peso"],
+  VND: ["₫", "ดองเวียดนาม", "Vietnamese dong"],
+  LAK: ["₭", "กีบลาว", "Laotian kip"],
+  KHR: ["៛", "เรียลกัมพูชา", "Cambodian riel"],
+  MMK: ["K", "จ๊าตเมียนมา", "Myanmar kyat"],
+  AED: ["AED", "ดีร์แฮมสหรัฐอาหรับเอมิเรตส์", "United Arab Emirates dirham"],
+
+  ARS: ["$", "เปโซอาร์เจนตินา", "Argentine peso"],
+  AWG: ["ƒ", "ฟลอรินอารูบา", "Aruban florin"],
+  BSD: ["$", "ดอลลาร์บาฮามาส", "Bahamian dollar"],
+  BHD: ["BD", "ดีนาร์บาห์เรน", "Bahraini dinar"],
+  BDT: ["৳", "ตากาบังกลาเทศ", "Bangladeshi taka"],
+  BBD: ["$", "ดอลลาร์บาร์เบโดส", "Barbadian dollar"],
+  BMD: ["$", "ดอลลาร์เบอร์มิวดา", "Bermudian dollar"],
+  BOB: ["Bs", "โบลิเวียโนโบลิเวีย", "Bolivian boliviano"],
+  BAM: ["KM", "มาร์กบอสเนียและเฮอร์เซโกวีนา", "Bosnia-Herzegovina convertible mark"],
+  BRL: ["R$", "เรียลบราซิล", "Brazilian real"],
+  BGN: ["лв", "เลฟบัลแกเรีย", "Bulgarian lev"],
+  CLP: ["$", "เปโซชิลี", "Chilean peso"],
+  COP: ["$", "เปโซโคลอมเบีย", "Colombian peso"],
+  HRK: ["kn", "คูนาโครเอเชีย", "Croatian kuna"],
+  CZK: ["Kč", "โครูนาเช็ก", "Czech Republic koruna"],
+  DKK: ["kr", "โครนเดนมาร์ก", "Danish krone"],
+  XCD: ["$", "ดอลลาร์แคริบเบียนตะวันออก", "East Caribbean dollar"],
+  EGP: ["E£", "ปอนด์อียิปต์", "Egyptian pound"],
+  FJD: ["$", "ดอลลาร์ฟิจิ", "Fijian dollar"],
+  GMD: ["D", "ดาลาซีแกมเบีย", "Gambian dalasi"],
+  GHS: ["₵", "เซดีกานา", "Ghanaian cedi"],
+  GTQ: ["Q", "เควตซัลกัวเตมาลา", "Guatemalan quetzal"],
+  HUF: ["Ft", "ฟอรินต์ฮังการี", "Hungarian forint"],
+  ISK: ["kr", "โครนาไอซ์แลนด์", "Icelandic króna"],
+  ILS: ["₪", "เชเกลอิสราเอลใหม่", "Israeli new sheqel"],
+  JMD: ["$", "ดอลลาร์จาเมกา", "Jamaican dollar"],
+  JOD: ["JD", "ดีนาร์จอร์แดน", "Jordanian dinar"],
+  KES: ["KSh", "ชิลลิงเคนยา", "Kenyan shilling"],
+  KWD: ["KD", "ดีนาร์คูเวต", "Kuwaiti dinar"],
+  LVL: ["Ls", "ลัตส์ลัตเวีย", "Latvian lats"],
+  LBP: ["L£", "ปอนด์เลบานอน", "Lebanese pound"],
+  LTL: ["Lt", "ลีตัสลิทัวเนีย", "Lithuanian litas"],
+  MKD: ["ден", "เดนาร์มาซิโดเนีย", "Macedonian denar"],
+  MGA: ["Ar", "อาเรียรีมาดากัสการ์", "Malagasy ariary"],
+  MVR: ["Rf", "รูฟียามัลดีฟส์", "Maldivian rufiyaa"],
+  MUR: ["₨", "รูปีมอริเชียส", "Mauritian rupee"],
+  MXN: ["$", "เปโซเม็กซิโก", "Mexican peso"],
+  MDL: ["L", "เลวมอลโดวา", "Moldovan leu"],
+  MAD: ["DH", "ดีร์แฮมโมร็อกโก", "Moroccan dirham"],
+  NAD: ["$", "ดอลลาร์นามิเบีย", "Namibian dollar"],
+  NPR: ["₨", "รูปีเนปาล", "Nepalese rupee"],
+  NGN: ["₦", "ไนราไนจีเรีย", "Nigerian naira"],
+  NOK: ["kr", "โครนนอร์เวย์", "Norwegian krone"],
+  OMR: ["﷼", "เรียลโอมาน", "Omani rial"],
+  PKR: ["₨", "รูปีปากีสถาน", "Pakistani rupee"],
+  PAB: ["B/.", "บัลบัวปานามา", "Panamanian balboa"],
+  PYG: ["₲", "กวารานีปารากวัย", "Paraguayan guarani"],
+  PEN: ["S/", "นวยโวซอลเปรู", "Peruvian nuevo sol"],
+  PLN: ["zł", "ซวอตีโปแลนด์", "Polish zloty"],
+  QAR: ["﷼", "เรียลกาตาร์", "Qatari rial"],
+  RON: ["lei", "เลวโรมาเนีย", "Romanian leu"],
+  RUB: ["₽", "รูเบิลรัสเซีย", "Russian ruble"],
+  SAR: ["﷼", "ริยัลซาอุดีอาระเบีย", "Saudi riyal"],
+  RSD: ["дин", "ดีนาร์เซอร์เบีย", "Serbian dinar"],
+  SCR: ["₨", "รูปีเซเชลส์", "Seychellois rupee"],
+  ZAR: ["R", "แรนด์แอฟริกาใต้", "South African rand"],
+  LKR: ["₨", "รูปีศรีลังกา", "Sri Lankan rupee"],
+  SEK: ["kr", "โครนาสวีเดน", "Swedish krona"],
+  SYP: ["S£", "ปอนด์ซีเรีย", "Syrian pound"],
+  TND: ["DT", "ดีนาร์ตูนิเซีย", "Tunisian dinar"],
+  TRY: ["₺", "ลีราตุรกี", "Turkish lira"],
+  UGX: ["USh", "ชิลลิงยูกันดา", "Ugandan shilling"],
+  UAH: ["₴", "ฮรีฟนายูเครน", "Ukrainian hryvnia"],
+  UYU: ["$U", "เปโซอุรุกวัย", "Uruguayan peso"],
+  VES: ["Bs", "โบลิวาร์เวเนซุเอลา", "Venezuelan bolívar"],
+  XOF: ["CFA", "ฟรังก์ซีเอฟเอ BCEAO", "CFA franc BCEAO"],
+  XAF: ["FCFA", "ฟรังก์ซีเอฟเอ BEAC", "CFA franc BEAC"],
+  XPF: ["₣", "ฟรังก์ซีเอฟพี", "CFP franc"]
+};
+const CUR_SYM = {};
+Object.keys(CUR).forEach(c => { CUR_SYM[c] = CUR[c][0]; });
+/* สกุลที่คนไทยใช้บ่อยอยู่กลุ่มบน ที่เหลืออยู่กลุ่มล่างเรียงตามชื่อในภาษาที่ใช้อยู่ */
+const CUR_COMMON = ["THB", "USD", "EUR", "GBP", "JPY", "CNY", "KRW", "SGD", "MYR", "HKD", "TWD",
+  "AUD", "NZD", "CAD", "CHF", "INR", "IDR", "PHP", "VND", "LAK", "KHR", "MMK", "AED"];
+const CUR_REST = Object.keys(CUR).filter(c => CUR_COMMON.indexOf(c) < 0);
+const CURRENCIES = CUR_COMMON.concat(CUR_REST);
+function curName(c) { const r = CUR[c]; return r ? (LANG === "th" ? r[1] : r[2]) : c; }
+function curRestSorted() { return CUR_REST.slice().sort((a, b) => curName(a).localeCompare(curName(b), LANG === "th" ? "th" : "en")); }
 
 function fmt(n, cur, opt) {
   const o = opt || {};
@@ -614,8 +722,11 @@ function advance(ds, freq, every, anchorDay) {
 }
 
 /* ---------------- defaults ---------------- */
-const ACCT_TYPES = ["cash", "bank", "savings", "credit", "investment", "loan", "other"];
-const NEGATIVE_TYPES = { credit: 1, loan: 1 };
+/* เรียงตามลำดับเดียวกับแอพต้นแบบ */
+const ACCT_TYPES = ["bank", "cash", "credit", "creditline", "liability", "property", "vehicle", "asset", "investment"];
+/* ชนิดรุ่นเก่าที่ยังมีบัญชีใช้อยู่ ไม่โชว์ให้เลือกใหม่ แต่ยังแสดงชื่อและคำนวณได้ตามเดิม */
+const ACCT_TYPES_LEGACY = ["savings", "loan", "other"];
+const NEGATIVE_TYPES = { credit: 1, creditline: 1, liability: 1, loan: 1 };
 const ACCT_COLORS = ["#0d6b4c", "#39577f", "#8a5c00", "#7a3f86", "#b03a2c", "#1d7a86", "#5c6f1f", "#8a4a2a"];
 
 function defaultCategories() {
@@ -758,8 +869,11 @@ function totals(list) {
 }
 
 /* ---------------- budgets ---------------- */
+/* บัญชีที่ปิด "นับรวมในงบประมาณ" ไว้ จะไม่ถูกนับในหน้างบประมาณ แต่ยังอยู่ในรายงาน
+   และในมูลค่าสุทธิตามปกติ ใช้สำหรับบัญชีที่ไม่ใช่ค่าใช้จ่ายประจำวัน เช่น บัญชีลงทุน */
+const inBudgetTx = x => { const a = accById(x.acct); return !a || a.inBudget !== false; };
 function monthSpend(k) {
-  if (!_spend[k]) _spend[k] = sumByCat(txInRange(monthStart(k), monthEnd(k)), "expense");
+  if (!_spend[k]) _spend[k] = sumByCat(txInRange(monthStart(k), monthEnd(k)).filter(inBudgetTx), "expense");
   return _spend[k];
 }
 function firstDataMonth() {
@@ -1997,8 +2111,8 @@ function budgetRowHTML(r, mk) {
 RENDERERS.accounts = function () {
   const b = balances(), nw = netWorth();
   const groups = [
-    { key: "assets", types: ["cash", "bank", "savings", "investment", "other"] },
-    { key: "liabilities", types: ["credit", "loan"] }
+    { key: "assets", types: ["bank", "cash", "savings", "investment", "property", "vehicle", "asset", "other"] },
+    { key: "liabilities", types: ["credit", "creditline", "liability", "loan"] }
   ];
   let h = rateWarning();
   h += '<div class="ledger-head"><div class="k">' + esc(t("netWorth")) + "</div>" +
@@ -2016,7 +2130,9 @@ RENDERERS.accounts = function () {
         const util = a.type === "credit" && a.creditLimit > 0 ? Math.round((Math.abs(Math.min(0, v)) / a.creditLimit) * 100) : null;
         return '<div class="srow"><span class="acct-dot" style="width:11px;height:11px;background:' + esc(a.color || "#888") + '"></span>' +
           '<span class="l"><b>' + esc(acctName(a)) + "</b><span>" + esc(t(a.type)) + (a.currency !== S.settings.currency ? " · " + esc(a.currency) : "") +
-          (util != null ? " · " + util + "% " + esc(LANG === "th" ? "ของวงเงิน" : "of limit") : "") + "</span></span>" +
+          (util != null ? " · " + util + "% " + esc(LANG === "th" ? "ของวงเงิน" : "of limit") : "") +
+          (Number(a.rate) > 0 ? " · " + esc(String(a.rate)) + "%" : "") +
+          (a.inBudget === false ? " · " + esc(LANG === "th" ? "ไม่นับในงบ" : "outside budget") : "") + "</span></span>" +
           '<span class="num ' + (v < 0 ? "neg" : "") + '" style="font-weight:600">' + esc(fmt(v, a.currency)) + "</span>" +
           '<button class="icon-btn" data-open-acct="' + esc(a.id) + '" aria-label="' + esc(t("register")) + '">' + IC.register + "</button>" +
           '<button class="icon-btn" data-edit-acct="' + esc(a.id) + '" aria-label="' + esc(t("edit")) + '">' + IC.pencil + "</button></div>";
@@ -2493,19 +2609,36 @@ function deleteTx(id) {
 function findTx(id) { return allTx().find(x => x.id === id) || null; }
 
 /* ============================ account editor ============================ */
+/* ชนิดบัญชีรุ่นเก่าที่เลิกให้เลือกใหม่แล้ว ต้องยังอยู่ในรายการถ้าบัญชีนี้ใช้อยู่
+   ไม่งั้นพอเปิดแก้ไขแล้วกดบันทึก ชนิดจะถูกเปลี่ยนเป็นตัวแรกของรายการโดยไม่ตั้งใจ */
+function acctTypeOptions(sel) {
+  const list = ACCT_TYPES.slice();
+  if (sel && list.indexOf(sel) < 0) list.push(sel);
+  return list.map(ty => '<option value="' + ty + '"' + (sel === ty ? " selected" : "") + ">" + esc(t(ty)) + "</option>").join("");
+}
+function curOptions(sel) {
+  const opt = c => '<option value="' + c + '"' + (sel === c ? " selected" : "") + ">" + esc(c + " · " + curName(c)) + "</option>";
+  const rest = curRestSorted().slice();
+  if (sel && CUR_COMMON.indexOf(sel) < 0 && rest.indexOf(sel) < 0) rest.unshift(sel);
+  return '<optgroup label="' + esc(LANG === "th" ? "ใช้บ่อย" : "Common") + '">' + CUR_COMMON.map(opt).join("") + "</optgroup>" +
+    '<optgroup label="' + esc(LANG === "th" ? "ทั้งหมด" : "All currencies") + '">' + rest.map(opt).join("") + "</optgroup>";
+}
 function acctSheet(existing) {
   const a = existing ? Object.assign({}, existing) : { id: null, name: "", type: "bank", currency: S.settings.currency, opening: 0, color: ACCT_COLORS[S.accounts.length % ACCT_COLORS.length], note: "", archived: false, creditLimit: 0 };
   const body = document.createElement("div");
   body.style.cssText = "display:flex;flex-direction:column;gap:12px";
   body.innerHTML =
     '<div class="field"><label>' + esc(t("accountName")) + '</label><input class="inp" id="ac-name" data-autofocus value="' + esc(a.name) + '" placeholder="' + esc(LANG === "th" ? "เช่น กสิกร ออมทรัพย์" : "e.g. Main checking") + '"></div>' +
-    '<div class="row2"><div class="field"><label>' + esc(t("accountType")) + '</label><select class="inp" id="ac-type">' + ACCT_TYPES.map(ty => '<option value="' + ty + '"' + (a.type === ty ? " selected" : "") + ">" + esc(t(ty)) + "</option>").join("") + "</select></div>" +
-    '<div class="field"><label>' + esc(t("currency")) + '</label><select class="inp" id="ac-cur">' + CURRENCIES.map(c => '<option value="' + c + '"' + (a.currency === c ? " selected" : "") + ">" + c + "</option>").join("") + "</select></div></div>" +
+    '<div class="row2"><div class="field"><label>' + esc(t("accountType")) + '</label><select class="inp" id="ac-type">' + acctTypeOptions(a.type) + "</select></div>" +
+    '<div class="field"><label>' + esc(t("currency")) + '</label><select class="inp" id="ac-cur">' + curOptions(a.currency) + "</select></div></div>" +
     '<div class="row2"><div class="field"><label>' + esc(t("opening")) + '</label><input class="inp num" id="ac-open" inputmode="decimal" value="' + esc(a.opening) + '"></div>' +
-    '<div class="field" id="ac-limit-wrap"><label>' + esc(t("creditLimit")) + '</label><input class="inp num" id="ac-limit" inputmode="decimal" value="' + esc(a.creditLimit || 0) + '"></div></div>' +
+    '<div class="field"><label>' + esc(t("interestRate")) + ' (%)</label><input class="inp num" id="ac-rate" inputmode="decimal" value="' + esc(a.rate == null ? "" : a.rate) + '" placeholder="0.00"></div></div>' +
+    '<div class="field" id="ac-limit-wrap"><label>' + esc(t("creditLimit")) + '</label><input class="inp num" id="ac-limit" inputmode="decimal" value="' + esc(a.creditLimit || 0) + '"></div>' +
     '<div class="field"><label>' + esc(LANG === "th" ? "สี" : "Colour") + '</label><div class="chips" id="ac-colors">' + ACCT_COLORS.map(c => '<button class="chip" data-color="' + c + '"' + (a.color === c ? ' aria-pressed="true"' : "") + ' style="width:34px;height:28px;background:' + c + ';border-color:' + c + '"></button>').join("") + "</div></div>" +
-    '<div class="field"><label>' + esc(t("note")) + '</label><input class="inp" id="ac-note" value="' + esc(a.note || "") + '"></div>' +
+    '<div class="field"><label>' + esc(t("notes")) + '</label><textarea class="inp" id="ac-note" rows="3" placeholder="' + esc(LANG === "th" ? "เลขบัญชี สาขา หรืออะไรก็ได้ที่อยากจำ" : "Account number, branch, anything worth remembering") + '">' + esc(a.note || "") + "</textarea></div>" +
+    '<label class="chk"><input type="checkbox" id="ac-budget"' + (a.inBudget === false ? "" : " checked") + "><span>" + esc(t("inBudget")) + "</span></label>" +
     '<label class="chk"><input type="checkbox" id="ac-arch"' + (a.archived ? " checked" : "") + "><span>" + esc(t("archive")) + "</span></label>" +
+    '<p class="hint" style="margin:0">' + esc(LANG === "th" ? "ปิด \"นับรวมในงบประมาณ\" แล้วรายจ่ายของบัญชีนี้จะไม่ถูกนับในหน้างบประมาณ แต่ยังอยู่ในรายงานและมูลค่าสุทธิตามเดิม" : "Turning off \"include in budget\" keeps this account's spending out of the budget screen; it still counts in reports and net worth.") + "</p>" +
     '<p class="hint" style="margin:0">' + esc(LANG === "th" ? "ยอดตั้งต้น = เงินที่มีอยู่ในบัญชีก่อนเริ่มบันทึก (บัตรเครดิต/หนี้ ใส่เป็นค่าลบ)" : "Opening balance is what was there before you started. Use a negative number for cards and loans.") + "</p>" +
     '<p class="hint" style="margin:0">' + esc(LANG === "th" ? "เก็บเข้าคลัง = ซ่อนจากรายการเลือกและสรุปบัญชี แต่ยอดเงินยังนับในมูลค่าสุทธิและรายงานตามเดิม" : "Archiving hides the account from pickers; its balance still counts in net worth and reports.") + "</p>" +
     (a.id ? '<p class="hint" style="margin:0">' + esc(LANG === "th" ? "เปลี่ยนสกุลเงินจะตีความยอดเดิมทั้งหมดเป็นสกุลใหม่ ไม่ได้แปลงค่าให้" : "Changing the currency reinterprets every existing amount in the new currency; it does not convert them.") + "</p>" : "") +
@@ -2527,6 +2660,8 @@ function acctSheet(existing) {
         id: a.id || uid(), name: name, en: a.en || null, type: $("#ac-type", body).value,
         currency: $("#ac-cur", body).value, opening: r2(Number(String($("#ac-open", body).value).replace(/[, ]/g, "")) || 0),
         creditLimit: r2(Number(String($("#ac-limit", body).value).replace(/[, ]/g, "")) || 0),
+        rate: Math.round((Number(String($("#ac-rate", body).value).replace(/[, %]/g, "")) || 0) * 1000) / 1000,
+        inBudget: $("#ac-budget", body).checked,
         color: a.color, note: $("#ac-note", body).value, archived: $("#ac-arch", body).checked,
         order: a.order != null ? a.order : S.accounts.length, updatedAt: Date.now()
       };
@@ -2758,10 +2893,10 @@ RENDERERS.settings = function () {
     [["th", "ไทย"], ["en", "English"]].map(([v, l]) => '<button data-set-lang="' + v + '"' + (LANG === v ? ' aria-pressed="true"' : "") + ">" + esc(l) + "</button>").join("") + "</div></div>");
 
   h += card(t("baseCurrency"),
-    '<div class="srow"><span class="l"><b>' + esc(t("baseCurrency")) + '</b><span>' + esc(LANG === "th" ? "ใช้สรุปยอดรวมและรายงาน" : "Used for totals and reports") + '</span></span><select class="inp" id="set-cur" style="width:120px">' +
-    CURRENCIES.map(c => '<option value="' + c + '"' + (S.settings.currency === c ? " selected" : "") + ">" + c + " " + (CUR_SYM[c] || "") + "</option>").join("") + "</select></div>" +
+    '<div class="srow"><span class="l"><b>' + esc(t("baseCurrency")) + '</b><span>' + esc(LANG === "th" ? "ใช้สรุปยอดรวมและรายงาน" : "Used for totals and reports") + '</span></span><select class="inp" id="set-cur" style="max-width:220px">' +
+    curOptions(S.settings.currency) + "</select></div>" +
     (usedCur.length ? '<div class="eyebrow" style="margin-top:10px">' + esc(t("rates")) + "</div>" +
-      usedCur.map(c => '<div class="srow"><span class="l"><b>1 ' + esc(c) + '</b><span>= ? ' + esc(S.settings.currency) + '</span></span><input class="inp num" data-rate="' + esc(c) + '" inputmode="decimal" style="width:120px" value="' + esc(S.settings.rates[c] || "") + '" placeholder="1"></div>').join("")
+      usedCur.map(c => '<div class="srow"><span class="l"><b>1 ' + esc(c) + '</b><span>' + esc(curName(c)) + ' · = ? ' + esc(S.settings.currency) + '</span></span><input class="inp num" data-rate="' + esc(c) + '" inputmode="decimal" style="width:120px" value="' + esc(S.settings.rates[c] || "") + '" placeholder="1"></div>').join("")
       : '<p class="hint" style="margin:8px 0 0">' + esc(LANG === "th" ? "ทุกบัญชีใช้สกุลเงินเดียวกัน จึงไม่ต้องตั้งอัตราแลกเปลี่ยน" : "All accounts use one currency, so no rates are needed.") + "</p>"));
 
   h += card(LANG === "th" ? "จัดการข้อมูลหลัก" : "Manage",
