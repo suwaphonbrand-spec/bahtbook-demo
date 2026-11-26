@@ -731,6 +731,56 @@ const ACCT_TYPES_LEGACY = ["savings", "loan", "other"];
 const NEGATIVE_TYPES = { credit: 1, creditline: 1, liability: 1, loan: 1 };
 const ACCT_COLORS = ["#0d6b4c", "#39577f", "#8a5c00", "#7a3f86", "#b03a2c", "#1d7a86", "#5c6f1f", "#8a4a2a"];
 
+/* สถาบันการเงินในไทย [ชื่อไทย, ชื่อ/ตัวย่อภาษาอังกฤษ]
+   เป็นแค่รายการแนะนำในช่องสถาบันการเงิน พิมพ์ชื่ออื่นที่ไม่มีในนี้ได้ตามปกติ */
+const TH_INSTITUTIONS = [
+  ["ธนาคารกรุงเทพ", "Bangkok Bank (BBL)"],
+  ["ธนาคารกสิกรไทย", "Kasikornbank (KBank)"],
+  ["ธนาคารกรุงไทย", "Krungthai Bank (KTB)"],
+  ["ธนาคารไทยพาณิชย์", "Siam Commercial Bank (SCB)"],
+  ["ธนาคารกรุงศรีอยุธยา", "Bank of Ayudhya (Krungsri)"],
+  ["ธนาคารทหารไทยธนชาต", "TMBThanachart (ttb)"],
+  ["ธนาคารเกียรตินาคินภัทร", "Kiatnakin Phatra (KKP)"],
+  ["ธนาคารซีไอเอ็มบี ไทย", "CIMB Thai"],
+  ["ธนาคารยูโอบี", "United Overseas Bank (UOB)"],
+  ["ธนาคารทิสโก้", "TISCO Bank"],
+  ["ธนาคารแลนด์ แอนด์ เฮ้าส์", "Land and Houses Bank (LH Bank)"],
+  ["ธนาคารไทยเครดิต", "Thai Credit Bank"],
+  ["ธนาคารไอซีบีซี (ไทย)", "ICBC (Thai)"],
+  ["ธนาคารสแตนดาร์ดชาร์เตอร์ด (ไทย)", "Standard Chartered (Thai)"],
+  ["ธนาคารเมกะ สากลพาณิชย์", "Mega International Commercial Bank"],
+  ["ธนาคารแห่งประเทศจีน (ไทย)", "Bank of China (Thai)"],
+  ["ธนาคารซูมิโตโม มิตซุย ทรัสต์ (ไทย)", "Sumitomo Mitsui Trust (Thai)"],
+  ["ธนาคารออมสิน", "Government Savings Bank (GSB)"],
+  ["ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร", "BAAC (ธ.ก.ส.)"],
+  ["ธนาคารอาคารสงเคราะห์", "Government Housing Bank (ธอส.)"],
+  ["ธนาคารอิสลามแห่งประเทศไทย", "Islamic Bank of Thailand (ibank)"],
+  ["ธนาคารพัฒนาวิสาหกิจขนาดกลางและขนาดย่อม", "SME D Bank"],
+  ["ธนาคารเพื่อการส่งออกและนำเข้าแห่งประเทศไทย", "EXIM Bank"],
+  ["ซิตี้แบงก์", "Citibank"],
+  ["เอชเอสบีซี", "HSBC"],
+  ["ดอยช์ แบงก์", "Deutsche Bank"],
+  ["เจพีมอร์แกน เชส", "JPMorgan Chase"],
+  ["แบงก์ ออฟ อเมริกา", "Bank of America"],
+  ["มิซูโฮ", "Mizuho Bank"],
+  ["เอ็มยูเอฟจี", "MUFG Bank"],
+  ["บีเอ็นพี พารีบาส์", "BNP Paribas"],
+  ["อาร์เอชบี", "RHB Bank"],
+  ["อินเดียน โอเวอร์ซีส์ แบงก์", "Indian Overseas Bank"],
+  ["เคทีซี", "Krungthai Card (KTC)"],
+  ["อิออน", "AEON Thana Sinsap"],
+  ["กรุงศรี เฟิร์สช้อยส์", "Krungsri First Choice"],
+  ["ศรีสวัสดิ์", "Srisawad"],
+  ["เมืองไทย แคปปิตอล", "Muangthai Capital"],
+  ["ทรูมันนี่ วอลเล็ท", "TrueMoney Wallet"],
+  ["ช้อปปี้เพย์", "ShopeePay"],
+  ["แรบบิท ไลน์ เพย์", "Rabbit LINE Pay"],
+  ["เป๋าตัง", "Paotang"],
+  ["เพย์พาล", "PayPal"],
+  ["สหกรณ์ออมทรัพย์", "Savings cooperative"],
+  ["กองทุนสำรองเลี้ยงชีพ", "Provident fund"]
+];
+
 function defaultCategories() {
   const C = [];
   const push = (name, en, kind, icon, parent) => { const id = uid(); C.push({ id, name, en, kind, icon, parent: parent || null, order: C.length, archived: false }); return id; };
@@ -2633,10 +2683,19 @@ function findTx(id) { return allTx().find(x => x.id === id) || null; }
 /* ============================ account editor ============================ */
 /* ชนิดบัญชีรุ่นเก่าที่เลิกให้เลือกใหม่แล้ว ต้องยังอยู่ในรายการถ้าบัญชีนี้ใช้อยู่
    ไม่งั้นพอเปิดแก้ไขแล้วกดบันทึก ชนิดจะถูกเปลี่ยนเป็นตัวแรกของรายการโดยไม่ตั้งใจ */
-/* รายชื่อสถาบันการเงินที่เคยพิมพ์ไว้ ให้พิมพ์ครั้งเดียวแล้วครั้งถัดไปเลือกได้เลย */
+/* รายชื่อสถาบันการเงินไทยที่ติดมากับแอพ รวมกับชื่อที่ผู้ใช้เคยพิมพ์เองซึ่งไม่อยู่ในรายการ
+   ช่องยังพิมพ์อิสระได้ รายการนี้แค่ช่วยเลือกให้เร็วขึ้น */
 function instDatalist() {
-  const names = Array.from(new Set(S.accounts.map(a => (a.institution || "").trim()).filter(Boolean))).sort();
-  return '<datalist id="inst-list">' + names.map(n => '<option value="' + esc(n) + '"></option>').join("") + "</datalist>";
+  const th = LANG === "th";
+  const known = {};
+  const opts = TH_INSTITUTIONS.map(([n, en]) => {
+    const v = th ? n : en, l = th ? en : n;
+    known[n] = known[en] = 1;
+    return '<option value="' + esc(v) + '" label="' + esc(l) + '"></option>';
+  });
+  const mine = Array.from(new Set(S.accounts.map(a => (a.institution || "").trim()).filter(Boolean)))
+    .filter(n => !known[n]).sort();
+  return '<datalist id="inst-list">' + mine.map(n => '<option value="' + esc(n) + '"></option>').join("") + opts.join("") + "</datalist>";
 }
 function acctTypeOptions(sel) {
   const list = ACCT_TYPES.slice();
