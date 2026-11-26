@@ -780,6 +780,39 @@ const TH_INSTITUTIONS = [
   ["สหกรณ์ออมทรัพย์", "Savings cooperative"],
   ["กองทุนสำรองเลี้ยงชีพ", "Provident fund"]
 ];
+/* ชื่อสั้นที่คนเรียกกันจริง ใช้จับคู่ชื่อที่ผู้ใช้พิมพ์เองเข้ากับธนาคารในรายการ
+   "กสิกร" "KBank" "กสิกรไทย" จะได้เป็นธนาคารเดียวกัน ไม่โผล่ซ้ำเป็นคนละแห่ง */
+const INST_ALIASES = {
+  "ธนาคารกสิกรไทย": ["กสิกร", "kasikorn"],
+  "ธนาคารกรุงเทพ": ["บัวหลวง", "bualuang"],
+  "ธนาคารกรุงศรีอยุธยา": ["กรุงศรี", "bay"],
+  "ธนาคารทหารไทยธนชาต": ["ทีทีบี", "ทหารไทย", "ธนชาต", "tmb", "thanachart"],
+  "ธนาคารเกียรตินาคินภัทร": ["เกียรตินาคิน"],
+  "ธนาคารซีไอเอ็มบี ไทย": ["ซีไอเอ็มบี", "cimb"],
+  "ธนาคารออมสิน": ["gsb"],
+  "ธนาคารเพื่อการเกษตรและสหกรณ์การเกษตร": ["ธกส", "baac"],
+  "ธนาคารอาคารสงเคราะห์": ["ธอส", "ghb"],
+  "ธนาคารแลนด์ แอนด์ เฮ้าส์": ["แลนด์แอนด์เฮ้าส์"],
+  "ทรูมันนี่ วอลเล็ท": ["ทรูมันนี่", "truemoney"]
+};
+const instKey = s => String(s || "").toLowerCase().replace(/^ธนาคาร/, "").replace(/[\s.()\-]/g, "");
+const INST_INDEX = {};
+TH_INSTITUTIONS.forEach(([th, en]) => {
+  const keys = [th, en, en.replace(/\s*\(.*\)$/, "")];
+  const m = en.match(/\(([^)]+)\)/);
+  if (m && !/^thai$/i.test(m[1])) keys.push(m[1]);      // "(Thai)" ไม่ใช่ตัวย่อ มีหลายธนาคารใช้ร่วมกัน
+  (INST_ALIASES[th] || []).forEach(k => keys.push(k));
+  keys.forEach(k => { const kk = instKey(k); if (kk && !INST_INDEX[kk]) INST_INDEX[kk] = th; });
+});
+/* ชื่อไทยมาตรฐานของธนาคารในรายการ ถ้าชื่อที่ให้มาไม่ใช่ธนาคารในรายการจะได้ค่าว่าง */
+const canonInst = s => INST_INDEX[instKey(s)] || "";
+function instLabel(s) {
+  const c = canonInst(s);
+  if (!c) return s || "";
+  if (LANG === "th") return c;
+  const row = TH_INSTITUTIONS.find(r => r[0] === c);
+  return row ? row[1] : c;
+}
 
 function defaultCategories() {
   const C = [];
@@ -2199,7 +2232,7 @@ RENDERERS.accounts = function () {
         const util = a.type === "credit" && a.creditLimit > 0 ? Math.round((Math.abs(Math.min(0, v)) / a.creditLimit) * 100) : null;
         return '<div class="srow"><span class="acct-dot" style="width:11px;height:11px;background:' + esc(a.color || "#888") + '"></span>' +
           '<span class="l"><b>' + (a.fav ? "★ " : "") + esc(acctName(a)) + "</b><span>" + esc(t(a.type)) +
-          (a.institution ? " · " + esc(a.institution) : "") +
+          (a.institution ? " · " + esc(instLabel(a.institution)) : "") +
           (a.currency !== S.settings.currency ? " · " + esc(a.currency) : "") +
           (util != null ? " · " + util + "% " + esc(LANG === "th" ? "ของวงเงิน" : "of limit") : "") +
           (Number(a.rate) > 0 ? " · " + esc(String(a.rate)) + "%" : "") +
@@ -2693,8 +2726,9 @@ function instDatalist() {
     known[n] = known[en] = 1;
     return '<option value="' + esc(v) + '" label="' + esc(l) + '"></option>';
   });
+  // ชื่อที่พิมพ์เองซึ่งที่จริงคือธนาคารในรายการ (เช่น "กสิกรไทย" "KBank") ไม่ต้องโชว์ซ้ำ
   const mine = Array.from(new Set(S.accounts.map(a => (a.institution || "").trim()).filter(Boolean)))
-    .filter(n => !known[n]).sort();
+    .filter(n => !known[n] && !canonInst(n)).sort();
   return '<datalist id="inst-list">' + mine.map(n => '<option value="' + esc(n) + '"></option>').join("") + opts.join("") + "</datalist>";
 }
 function acctTypeOptions(sel) {
@@ -2718,7 +2752,7 @@ function acctSheet(existing) {
     '<div class="field"><label>' + esc(t("nickname")) + '</label><input class="inp" id="ac-nick" value="' + esc(a.nick || "") + '" placeholder="' + esc(LANG === "th" ? "เช่น บัญชีใช้จ่าย" : "e.g. Spending") + '"></div></div>' +
     '<div class="row2"><div class="field"><label>' + esc(t("accountType")) + '</label><select class="inp" id="ac-type">' + acctTypeOptions(a.type) + "</select></div>" +
     '<div class="field"><label>' + esc(t("currency")) + '</label><select class="inp" id="ac-cur">' + curOptions(a.currency) + "</select></div></div>" +
-    '<div class="row2"><div class="field"><label>' + esc(t("institution")) + '</label><input class="inp" id="ac-inst" list="inst-list" value="' + esc(a.institution || "") + '" placeholder="' + esc(LANG === "th" ? "เช่น กสิกรไทย" : "e.g. Kasikornbank") + '">' + instDatalist() + "</div>" +
+    '<div class="row2"><div class="field"><label>' + esc(t("institution")) + '</label><input class="inp" id="ac-inst" list="inst-list" value="' + esc(instLabel(a.institution)) + '" placeholder="' + esc(LANG === "th" ? "เช่น กสิกรไทย" : "e.g. Kasikornbank") + '">' + instDatalist() + "</div>" +
     '<div class="field"><label>' + esc(t("acctNumber")) + '</label><input class="inp" id="ac-no" value="' + esc(a.number || "") + '" placeholder="xxx-x-xxxxx-x"></div></div>' +
     '<div class="row2"><div class="field"><label>' + esc(t("abbr")) + '</label><input class="inp" id="ac-abbr" maxlength="8" value="' + esc(a.abbr || "") + '" placeholder="' + esc(LANG === "th" ? "เช่น KBank" : "e.g. KBank") + '"></div>' +
     '<div class="field"><label>' + esc(t("minBalance")) + '</label><input class="inp num" id="ac-min" inputmode="decimal" value="' + esc(a.minBalance || 0) + '"></div></div>' +
@@ -2755,7 +2789,8 @@ function acctSheet(existing) {
         rate: Math.round((Number(String($("#ac-rate", body).value).replace(/[, %]/g, "")) || 0) * 1000) / 1000,
         minBalance: r2(Number(String($("#ac-min", body).value).replace(/[, ]/g, "")) || 0),
         nick: $("#ac-nick", body).value.trim(), abbr: $("#ac-abbr", body).value.trim(),
-        institution: $("#ac-inst", body).value.trim(), number: $("#ac-no", body).value.trim(),
+        // เก็บเป็นชื่อมาตรฐานถ้าเป็นธนาคารในรายการ พิมพ์ "กสิกร" ก็เก็บเป็น "ธนาคารกสิกรไทย"
+        institution: (v => canonInst(v) || v)($("#ac-inst", body).value.trim()), number: $("#ac-no", body).value.trim(),
         fav: $("#ac-fav", body).checked, inBudget: $("#ac-budget", body).checked,
         color: a.color, note: $("#ac-note", body).value, archived: $("#ac-arch", body).checked,
         order: a.order != null ? a.order : S.accounts.length, updatedAt: Date.now()
