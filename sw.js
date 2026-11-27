@@ -4,7 +4,7 @@
    กฎที่ห้ามพลาด: ข้อมูลของผู้ใช้กับขั้นตอนล็อกอินต้องไม่ถูกแคชเลย
    คำขอไปยัง googleapis.com และ accounts.google.com จึงปล่อยผ่านทั้งหมด
    ไม่แตะต้อง ไม่เก็บสำเนา                                                  */
-const VERSION = "20261127031533";
+const VERSION = "20261127041241";
 const CACHE = "budget-finance-" + VERSION;
 const SHELL = ["./", "./index.html", "./manifest.webmanifest",
   "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png", "./icon-180.png"];

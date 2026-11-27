@@ -327,6 +327,8 @@ svg.chart{display:block;width:100%;height:auto;max-width:100%}
 #install .x{flex:none;border:0;background:none;color:var(--ink-dim);font-size:18px;line-height:1;padding:4px 6px;cursor:pointer}
 @media (min-width:900px){#install{bottom:0}}
 @media (max-width:560px){#install{font-size:12.5px;gap:8px;padding:10px 12px}}
+
+#si-note.si-warn{color:var(--warn);background:var(--warn-soft);padding:10px 12px;border-left:3px solid var(--warn);text-align:left}
 </style>
 <div id="app">
   <aside id="side">
@@ -1842,6 +1844,7 @@ function watchRemote() {
 /* ปุ่มเข้าสู่ระบบเรียกตัวนี้ พอได้สิทธิ์แล้วโหลดหน้าใหม่ เพราะโทเคนถูกเก็บไว้
    ใน localStorage อยู่แล้ว การ boot รอบถัดไปจึงต่อ Drive ได้เองตั้งแต่ต้น */
 async function signInWithGoogle() {
+  if (inAppBrowser()) { toast(inAppHelp()); return false; }   // เปิดไปก็ค้างหน้าขาว บอกวิธีแทน
   const r = await driveBackend.signIn();
   if (!r) { toast(LANG === "th" ? "เข้าสู่ระบบไม่สำเร็จ" : "Sign-in did not complete"); return false; }
   location.reload();
@@ -1851,6 +1854,7 @@ async function signInWithGoogle() {
    การบูตรอบถัดไปจะรวมข้อมูลในเครื่องกับ Drive และส่งของในกล่องรอส่งขึ้นไปเอง */
 let _reconnecting = false;
 function reconnectGoogle() {
+  if (inAppBrowser()) { toast(inAppHelp()); return; }
   if (_reconnecting) return;
   _reconnecting = true;
   driveBackend.reconnect().then(ok => {
@@ -2076,6 +2080,43 @@ function localModeBanner() {
     "</div></div>";
 }
 
+/* เบราว์เซอร์ที่ฝังอยู่ในแอปแชทหรือโซเชียล Google ไม่อนุญาตให้เข้าสู่ระบบในนั้น
+   (หน้าต่างล็อกอินค้างเป็นหน้าขาว หรือขึ้น Error 403: disallowed_useragent) */
+function inAppBrowser() {
+  const ua = navigator.userAgent || "";
+  if (/\bLine\//i.test(ua)) return "LINE";
+  if (/FBAN|FBAV|FB_IAB|FBIOS|Messenger/i.test(ua)) return "Facebook";
+  if (/Instagram/i.test(ua)) return "Instagram";
+  if (/TikTok|BytedanceWebview|musical_ly/i.test(ua)) return "TikTok";
+  return "";
+}
+function realBrowserName() { return /iPhone|iPad|iPod/i.test(navigator.userAgent || "") ? "Safari" : "Chrome"; }
+function inAppHelp() {
+  const app = inAppBrowser(), br = realBrowserName();
+  return LANG === "th"
+    ? "ตอนนี้เปิดอยู่ในแอป " + app + " ซึ่ง Google ไม่อนุญาตให้เข้าสู่ระบบในนั้น แตะ ⋮ หรือ ⋯ แล้วเลือก \"เปิดใน " + br + "\" หรือกดคัดลอกลิงก์ไปวางใน " + br + " เอง"
+    : "You're inside the " + app + " app, where Google blocks sign-in. Tap ⋮ or ⋯ and choose \"Open in " + br + "\", or copy the link and paste it into " + br + ".";
+}
+function copyText(s) {
+  if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(s).then(() => true, () => copyTextOld(s));
+  return Promise.resolve(copyTextOld(s));
+}
+function copyTextOld(s) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = s; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;top:-1000px;opacity:0";
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, s.length);
+    const ok = document.execCommand("copy"); ta.remove(); return ok;
+  } catch (e) { return false; }
+}
+function copyAppLink() {
+  let u = location.href;
+  try { const x = new URL(location.href); x.search = ""; x.hash = ""; u = x.toString(); } catch (e) {}
+  copyText(u).then(ok => toast(ok
+    ? (LANG === "th" ? "คัดลอกลิงก์แล้ว ไปวางใน " + realBrowserName() + " ได้เลย" : "Link copied — paste it into " + realBrowserName())
+    : u));
+}
+
 /* หน้าแรกสำหรับคนที่ยังไม่ได้เข้าสู่ระบบ */
 function showSignIn() {
   const el = $("#signin"); if (!el) return;
@@ -2089,6 +2130,12 @@ function showSignIn() {
   $("#si-note").textContent = th
     ? "แอพนี้ไม่มีเซิร์ฟเวอร์ ข้อมูลวิ่งจากเบราว์เซอร์ของคุณไป Google โดยตรง เราไม่เห็นและไม่เก็บอะไรไว้เลย และขอสิทธิ์เฉพาะไฟล์ที่แอพนี้สร้างเท่านั้น ไฟล์อื่นใน Drive มองไม่เห็น"
     : "There is no server behind this app. Your data goes from your browser straight to Google; we never see or keep any of it. The app asks only for access to the one file it creates — nothing else in your Drive.";
+  // อยู่ในแอป LINE/Facebook: ปุ่มเข้าสู่ระบบจะค้าง เปลี่ยนเป็นปุ่มคัดลอกลิงก์และบอกวิธีเปิดในเบราว์เซอร์ปกติแทน
+  if (inAppBrowser()) {
+    $("#si-google").textContent = th ? "คัดลอกลิงก์ไปเปิดใน " + realBrowserName() : "Copy link to open in " + realBrowserName();
+    $("#si-note").textContent = inAppHelp();
+    $("#si-note").classList.add("si-warn");
+  }
   el.classList.remove("hide");
 }
 function hideSignIn() { const el = $("#signin"); if (el) el.classList.add("hide"); }
@@ -3526,7 +3573,7 @@ document.addEventListener("click", ev => {
       : "The app stops asking for a code on every device using this link. Nothing is deleted, and you can set a new code in Settings.");
     return;
   }
-  if (el.closest("#si-google")) { signInWithGoogle(); return; }
+  if (el.closest("#si-google")) { if (inAppBrowser()) copyAppLink(); else signInWithGoogle(); return; }
   if (el.closest("#sync-ind") && Backend.kind === "drive" && driveBackend.offline) { reconnectGoogle(); return; }
   if (el.closest("#si-skip")) { hideSignIn(); return; }
   const goBtn = el.closest("[data-go]"); if (goBtn) { go(goBtn.dataset.go); return; }
@@ -3601,7 +3648,25 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) flus
 /* ============================ start ============================ */
 const START_PAGE = (location.hash || "").replace("#", "");
 if (["overview", "accounts", "register", "budget", "reports", "settings"].indexOf(START_PAGE) >= 0) UI.page = START_PAGE;
-boot();
+/* เปิดลิงก์จากแชท LINE: สั่งให้ LINE เปิดลิงก์นี้ในเบราว์เซอร์ปกติแทน (LINE รองรับ openExternalBrowser=1)
+   ถ้ามีพารามิเตอร์นี้แล้วแต่ยังอยู่ใน LINE แปลว่า LINE รุ่นนั้นไม่รองรับ ก็เปิดแอพตามปกติแล้วบอกวิธีเปิดเอง
+   พอไปถึงเบราว์เซอร์ปกติแล้วก็ลบพารามิเตอร์ทิ้ง ลิงก์จะได้สะอาดตอนกดติดตั้งหรือคัดลอกต่อ */
+(function startApp() {
+  if (window.claude && window.claude.use) { boot(); return; }
+  let u = null;
+  try { u = new URL(location.href); } catch (e) {}
+  const flagged = !!(u && u.searchParams.get("openExternalBrowser") === "1");
+  if (u && inAppBrowser() === "LINE" && !flagged) {
+    u.searchParams.set("openExternalBrowser", "1");
+    location.replace(u.toString());
+    return;
+  }
+  if (u && flagged && !inAppBrowser()) {
+    u.searchParams.delete("openExternalBrowser");
+    try { history.replaceState(null, "", u.toString()); } catch (e) {}
+  }
+  boot();
+})();
 </script>
 <script>
 "use strict";
