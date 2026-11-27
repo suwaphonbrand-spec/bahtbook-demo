@@ -313,6 +313,7 @@ svg.chart{display:block;width:100%;height:auto;max-width:100%}
 .sync{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--ink-mute);letter-spacing:.04em}
 .sync i{width:5px;height:5px;background:var(--ink-mute);display:block}
 .sync.ok i{background:var(--pos)} .sync.off i{background:var(--warn)}
+.sync.tap{cursor:pointer;color:var(--warn)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
 /* ---- แถบชวนติดตั้งลงเครื่อง ---- */
@@ -1074,6 +1075,18 @@ const driveBackend = {
   kind: "drive", mergesOnWrite: true,
   token: null, expiresAt: 0, client: null, fileId: null, label: "",
   cache: {}, remoteTag: null, saving: null, queued: false, pollTimer: null,
+  /* offline = เคยล็อกอินบนเครื่องนี้แล้ว แต่ตอนนี้ไม่มีโทเคนที่ใช้ได้
+     แอพยังเปิดใช้ได้เต็มที่ด้วยข้อมูลที่เก็บไว้ในเครื่อง ทุกอย่างที่บันทึกเข้ากล่องรอส่ง
+     แล้วแตะครั้งเดียวเพื่อเชื่อมต่อใหม่ ไม่ต้องกรอกรหัส */
+  offline: false,
+  savedLabel() { try { return localStorage.getItem("bahtbook:glabel") || ""; } catch (e) { return ""; } },
+  offlineErr() { const e = new Error("drive offline"); e.code = "unavailable"; return e; },
+  goOffline() {
+    if (this.offline) return;
+    this.offline = true;
+    clearInterval(this.pollTimer); this.pollTimer = null;
+    if (typeof onDriveOffline === "function") onDriveOffline();
+  },
 
   available() { return !!CONFIG.googleClientId && !(window.claude && window.claude.use); },
 
@@ -1131,20 +1144,31 @@ const driveBackend = {
         else finish(false);
       };
       this.client.error_callback = () => finish(false);
-      try { this.client.requestAccessToken({ prompt: interactive ? "" : "none" }); }
+      // บอก Google ว่าเป็นบัญชีไหน คนที่ล็อกอินไว้หลายบัญชีจะได้ไม่ต้องเลือกบัญชีทุกครั้ง
+      const hint = this.label || this.savedLabel();
+      const opt = { prompt: interactive ? "" : "none" };
+      if (hint) opt.login_hint = hint;
+      try { this.client.requestAccessToken(opt); }
       catch (e) { finish(false); }
       if (!interactive) setTimeout(() => finish(false), 6000);
     });
   },
 
   async api(url, opt) {
+    /* โทเคนหมดอายุแล้วต่ออายุเงียบๆ ไม่ได้ เพราะเบราว์เซอร์บล็อกป๊อปอัปที่ไม่ได้มาจากการกด
+       (เดิมลองแล้วรอเปล่าๆ 6 วินาที) จึงสลับเป็นโหมดรอซิงก์ทันที ของที่จะเขียนอยู่ในกล่องรอส่ง */
+    if (this.offline || !this.token || Date.now() > this.expiresAt - 30000) {
+      if (this.token) this.forgetToken();
+      this.goOffline();
+      throw this.offlineErr();
+    }
     const o = opt || {};
-    const run = () => fetch(url, Object.assign({}, o, {
+    const res = await fetch(url, Object.assign({}, o, {
       headers: Object.assign({ Authorization: "Bearer " + this.token }, o.headers || {})
     }));
-    let res = await run();
-    if (res.status === 401) {                       // โทเคนหมดอายุ ขอใหม่เงียบๆ
-      if (await this.requestToken(false)) res = await run();
+    if (res.status === 401) {
+      this.forgetToken(); this.goOffline();
+      const err = this.offlineErr(); err.status = 401; throw err;
     }
     if (!res.ok) {
       /* Drive ใช้ 403 ทั้งกับเรื่องที่ลองใหม่แล้วได้ (ถูกจำกัดอัตรา) และเรื่องที่ลองกี่ครั้ง
@@ -1191,20 +1215,38 @@ const driveBackend = {
     return (await res.json()).modifiedTime;
   },
 
+  offlineConn() { this.offline = true; return { id: "drive", label: this.savedLabel(), offline: true }; },
   async init() {
     if (!this.available()) return null;
-    if (!(await this.waitForGis())) return null;
     if (!this.loadSavedToken()) {
-      // ไม่เคยล็อกอินบนเครื่องนี้ ก็ไม่ต้องลองต่ออายุให้เสียเวลาและโดนบล็อกป๊อปอัป
+      // ไม่เคยล็อกอินบนเครื่องนี้ ให้ไปหน้าเข้าสู่ระบบตามปกติ
       if (!this.wasSignedIn()) return null;
-      if (!(await this.requestToken(false))) return null;                           // โทเคนหมดอายุ รอให้กดเข้าสู่ระบบเอง
+      // เคยล็อกอินแล้วแต่โทเคนหมดอายุ (อยู่ได้ราวชั่วโมงเดียว) เปิดแอพด้วยข้อมูลในเครื่องเลย
+      // ไม่ขวางด้วยหน้าล็อกอิน ไม่ต้องรอ แตะซิงก์ทีหลังครั้งเดียวพอ
+      return this.offlineConn();
     }
     return this.afterSignIn();
   },
+  /* ต้องเปิดหน้าต่าง Google ทันทีในจังหวะที่ผู้ใช้กด ถ้ามี await คั่นก่อน
+     Safari บน iPhone จะถือว่าไม่ได้มาจากการกดแล้วบล็อกหน้าต่างทิ้ง */
+  gisReady() { return !!(window.google && google.accounts && google.accounts.oauth2); },
   async signIn() {
-    if (!(await this.waitForGis())) return null;
-    if (!(await this.requestToken(true))) return null;
-    return this.afterSignIn();
+    const got = this.gisReady() ? await this.requestToken(true)
+      : (await this.waitForGis()) && (await this.requestToken(true));
+    if (!got) return null;
+    this.offline = false;                            // ได้โทเคนใหม่แล้ว เลิกโหมดรอซิงก์ก่อนเรียก Drive
+    const r = await this.afterSignIn();
+    return r && !r.offline ? r : null;
+  },
+  /* เชื่อมต่อใหม่หลังโทเคนหมดอายุ Google จำบัญชีและการอนุญาตไว้แล้ว
+     หน้าต่างที่เด้งขึ้นจะปิดเองทันที ไม่ต้องกรอกรหัส */
+  reconnect() {
+    if (this.gisReady()) return this.requestToken(true);
+    return this.waitForGis().then(ok => (ok ? this.requestToken(true) : false));
+  },
+  /* มีข้อมูลจาก Drive เก็บไว้ในเครื่องนี้แล้วหรือยัง ใช้ตัดสินว่าเปิดแอพมาโชว์ข้อมูลจริงได้ทันทีไหม */
+  hasLocalCopy() {
+    try { return !!localStorage.getItem(LS_PREFIX + "drive:accounts"); } catch (e) { return false; }
   },
   async afterSignIn() {
     try {
@@ -1214,20 +1256,28 @@ const driveBackend = {
       try {
         const r = await this.api("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)");
         this.label = ((await r.json()).user || {}).emailAddress || "";
+        if (this.label) { try { localStorage.setItem("bahtbook:glabel", this.label); } catch (e) {} }
       } catch (e) {}
+      this.offline = false;
       return { id: "drive", label: this.label };
-    } catch (e) { this.forgetToken(); return null; }
+    } catch (e) {
+      // เน็ตหลุดหรือโทเคนใช้ไม่ได้ตอนเปิดแอพ ถ้าเคยล็อกอินแล้วก็ใช้ข้อมูลในเครื่องไปก่อน
+      // ห้ามตกไปโหมดไม่ล็อกอิน เพราะของที่บันทึกจะไปลงอีกถังหนึ่ง ไม่เข้า Drive
+      if (this.wasSignedIn()) return this.offlineConn();
+      this.forgetToken();
+      return null;
+    }
   },
   signOut() {
     this.forgetToken();
-    try { localStorage.removeItem("bahtbook:gseen"); } catch (e) {}
+    try { localStorage.removeItem("bahtbook:gseen"); localStorage.removeItem("bahtbook:glabel"); } catch (e) {}
     this.fileId = null; this.cache = {}; this.remoteTag = null;
     clearInterval(this.pollTimer); this.pollTimer = null;
   },
 
-  async getDoc(key) { return this.cache[key] || null; },
-  async setDoc(key, body) { this.cache[key] = body; await this.save(); },
-  async delDoc(key) { delete this.cache[key]; await this.save(); },
+  async getDoc(key) { return this.offline ? null : this.cache[key] || null; },
+  async setDoc(key, body) { if (this.offline) throw this.offlineErr(); this.cache[key] = body; await this.save(); },
+  async delDoc(key) { if (this.offline) throw this.offlineErr(); delete this.cache[key]; await this.save(); },
   async listKeys() { return Object.keys(this.cache); },
 
   /* เขียนทั้งไฟล์ครั้งเดียว รวบการเรียกที่ซ้อนกันให้เหลือรอบเดียว */
@@ -1264,7 +1314,7 @@ const driveBackend = {
   /* ไม่มี realtime จึงถามไฟล์เป็นระยะตอนที่แท็บเปิดอยู่ */
   watchAll(onDoc, onError) {
     const tick = async () => {
-      if (document.hidden || !this.fileId || this.saving) return;
+      if (document.hidden || this.offline || !this.fileId || this.saving) return;
       try {
         const tag = await this.stat();
         if (tag === this.remoteTag) return;
@@ -1277,7 +1327,7 @@ const driveBackend = {
     this.pollTimer = setInterval(tick, 45000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
   },
-  async wipe() { this.cache = {}; await this.save(); }
+  async wipe() { if (this.offline) throw this.offlineErr(); this.cache = {}; await this.save(); }
 };
 
 /* ---------- local: เบราว์เซอร์เครื่องนี้เท่านั้น ---------- */
@@ -1533,7 +1583,8 @@ function setStatus(s) {
   const el = $("#sync-ind"); if (!el) return;
   const pending = Object.keys(Sync.dirty).length;
   let cls = "sync off", label = t("syncOff");
-  if (s === "syncing") { cls = "sync"; label = t("syncing"); }
+  if (Backend.kind === "drive" && driveBackend.offline) { cls = "sync off tap"; label = LANG === "th" ? "แตะเพื่อซิงก์" : "Tap to sync"; }
+  else if (s === "syncing") { cls = "sync"; label = t("syncing"); }
   else if (s === "ok" && !pending) { cls = "sync ok"; label = t("syncOn"); }
   else if (Backend.kind !== "local" && pending) { label = (LANG === "th" ? "รอซิงก์ " : "to sync ") + pending; }
   el.className = cls;
@@ -1661,6 +1712,10 @@ function hasAnyData() { return S.accounts.length > 0; }
 
 async function boot() {
   LANG = (navigator.language || "th").slice(0, 2) === "th" ? "th" : "th";
+  // คนที่เคยล็อกอิน Google และมีข้อมูลเก็บไว้ในเครื่องแล้ว เปิดมาเห็นข้อมูลของตัวเองทันที
+  // ไม่ต้องรอเน็ต และไม่มีข้อมูลตัวอย่างแวบขึ้นมาก่อน
+  // (ถ้ายังไม่มีสำเนาในเครื่อง ต้องโหลดถังไม่ล็อกอินก่อน เพื่อย้ายข้อมูลที่บันทึกไว้ขึ้น Drive ได้)
+  if (driveBackend.available() && driveBackend.wasSignedIn() && driveBackend.hasLocalCopy()) Sync.id = "drive";
   loadLocal();                       // anonymous cache, if any
   if (S.settings.lang) LANG = S.settings.lang;
   applyTheme();
@@ -1683,6 +1738,27 @@ async function boot() {
   S.accounts = []; S.categories = []; S.payees = []; S.recurring = []; S.tx = {}; S.index = { months: {} };
   loadLocal();
   Sync.dirty = lsGet("_dirty") || {};   // writes from an earlier visit that never reached the store
+
+  // โทเคน Google หมดอายุ: ใช้งานจากข้อมูลในเครื่องไปก่อนเต็มที่ ไม่ขวางด้วยหน้าล็อกอิน
+  // ของที่บันทึกเข้ากล่องรอส่ง แตะ "ซิงก์" ครั้งเดียวแล้วจะรวมกับ Drive และส่งขึ้นไปเอง
+  if (conn.offline) {
+    if (!S.accounts.length && anonSnapshot.a.length) {
+      // เพิ่งล็อกอินครั้งแรกแต่เน็ตหลุดก่อนดึงข้อมูลจาก Drive ได้ ใช้ข้อมูลเดิมในเครื่องไปก่อน
+      // แล้วเก็บเข้ากล่องรอส่ง พอซิงก์ได้ก็จะย้ายขึ้น Drive เหมือนการล็อกอินครั้งแรกตามปกติ
+      S.settings = anonSnapshot.s; S.accounts = anonSnapshot.a; S.categories = anonSnapshot.c;
+      S.payees = anonSnapshot.p; S.recurring = anonSnapshot.r; S.budgets = anonSnapshot.b;
+      S.index = anonSnapshot.i; S.tx = anonSnapshot.t;
+      invalidate();
+      await persistAll();
+    }
+    if (S.settings.lang) LANG = S.settings.lang;
+    applyTheme();
+    setStatus("offline");
+    postDueRecurring();
+    render();
+    if (S.settings.pin && !UI.unlocked && $("#lock").classList.contains("hide")) showLock("unlock");
+    return;
+  }
   setStatus("syncing");
 
   let remote = {};
@@ -1771,6 +1847,20 @@ async function signInWithGoogle() {
   location.reload();
   return true;
 }
+/* แตะ "ซิงก์" หลังโทเคนหมดอายุ ได้โทเคนใหม่แล้วโหลดหน้าใหม่
+   การบูตรอบถัดไปจะรวมข้อมูลในเครื่องกับ Drive และส่งของในกล่องรอส่งขึ้นไปเอง */
+let _reconnecting = false;
+function reconnectGoogle() {
+  if (_reconnecting) return;
+  _reconnecting = true;
+  driveBackend.reconnect().then(ok => {
+    _reconnecting = false;
+    if (ok) location.reload();
+    else toast(LANG === "th" ? "ยังเชื่อมต่อไม่สำเร็จ ลองแตะอีกครั้ง" : "Could not reconnect — tap again");
+  });
+}
+/* โทเคนหมดอายุกลางทางขณะเปิดแอพค้างไว้ */
+function onDriveOffline() { setStatus("offline"); if (UI.booted) render(); }
 function signOutOfGoogle() {
   driveBackend.signOut();
   try { Object.keys(localStorage).filter(k => k.indexOf(LS_PREFIX) === 0).forEach(k => localStorage.removeItem(k)); } catch (e) {}
@@ -1954,7 +2044,7 @@ function render() {
   renderNav(); renderTopbar(); renderSide();
   const host = $("#screen");
   const fn = RENDERERS[UI.page] || RENDERERS.overview;
-  host.innerHTML = fn();
+  host.innerHTML = reconnectBanner() + fn();
   if (RENDERERS["after_" + UI.page]) RENDERERS["after_" + UI.page](host);
 }
 
@@ -1964,6 +2054,17 @@ function demoBanner() {
   return '<div class="card notice"><div class="card-b" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
     '<span style="flex:1;min-width:160px">' + esc(t("demoBanner")) + "</span>" +
     '<button class="btn sm" data-act="rm-demo">' + esc(t("removeDemo")) + "</button></div></div>";
+}
+/* โทเคน Google หมดอายุ ขึ้นทุกหน้า แต่ไม่ขวางการใช้งาน */
+function reconnectBanner() {
+  if (!(Backend.kind === "drive" && driveBackend.offline)) return "";
+  const pending = Object.keys(Sync.dirty || {}).length > 0;
+  return '<div class="card notice"><div class="card-b" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+    '<span style="flex:1;min-width:190px">' + esc(LANG === "th"
+      ? (pending ? "มีรายการรอส่งขึ้น Google Drive · " : "") + "บันทึกต่อได้ตามปกติ แตะซิงก์เมื่อพร้อม ไม่ต้องใส่รหัส"
+      : (pending ? "Changes are waiting to go to Google Drive · " : "") + "Keep recording as usual. Tap Sync when ready — no password needed.") + "</span>" +
+    '<button class="btn sm p" data-act="google-reconnect">' + esc(LANG === "th" ? "ซิงก์" : "Sync") + "</button>" +
+    "</div></div>";
 }
 function localModeBanner() {
   if (Backend.kind !== "local") return "";
@@ -3426,6 +3527,7 @@ document.addEventListener("click", ev => {
     return;
   }
   if (el.closest("#si-google")) { signInWithGoogle(); return; }
+  if (el.closest("#sync-ind") && Backend.kind === "drive" && driveBackend.offline) { reconnectGoogle(); return; }
   if (el.closest("#si-skip")) { hideSignIn(); return; }
   const goBtn = el.closest("[data-go]"); if (goBtn) { go(goBtn.dataset.go); return; }
   const acctBtn = el.closest("[data-acct]"); if (acctBtn) { UI.reg = { acct: acctBtn.dataset.acct, q: "", type: "", cat: "", from: "", to: "", uncleared: false, limit: 150 }; go("register"); return; }
@@ -3461,6 +3563,7 @@ document.addEventListener("click", ev => {
     case "new-acct": acctSheet(null); break;
     case "accounts": closeAllSheets(); go("accounts"); break;
     case "google-signin": signInWithGoogle(); break;
+    case "google-reconnect": reconnectGoogle(); break;
     case "google-signout":
       confirmSheet(LANG === "th" ? "ออกจากระบบ?" : "Sign out?", LANG === "th" ? "ออกจากระบบ" : "Sign out", signOutOfGoogle, false,
         LANG === "th" ? "ข้อมูลยังอยู่ใน Google Drive ของคุณครบถ้วน เข้าสู่ระบบใหม่เมื่อไหร่ก็ได้ข้อมูลกลับมาเหมือนเดิม" : "Your data stays in your Google Drive. Signing back in brings it all back.");
